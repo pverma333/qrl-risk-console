@@ -25,7 +25,7 @@ class MasterIndexFetcher:
         self.log_path.mkdir(parents=True, exist_ok=True)
 
         logging.basicConfig(
-            filename=self.log_path / "master_fetch.log",
+            filename=self.log_path / "master_index_fetch.log",
             level=logging.INFO,
             format="%(asctime)s - %(levelname)s - %(message)s"
         )

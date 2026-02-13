@@ -27,8 +27,8 @@ def main():
 
 if __name__ == "__main__":
     main()
-#Run Script
+#Run script
 """
---> python -m scripts.run_index_fetch_cli --start 2019-07-01 --end 2026-02-12
+--> python -m scripts.run_index_fetch_cli --start 2019-01-01 --end 2026-02-12
 
 """
