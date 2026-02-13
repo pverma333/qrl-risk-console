@@ -162,7 +162,7 @@ class MasterIndexFetcher:
                 if not vix_final_path.exists():
                     raise Exception("VIX final file not created.")
 
-            # Delete partial ONLY after successful final save
+            # Delete partial csv after successful final save
             if spot_partial_path.exists():
                 spot_partial_path.unlink()
 
