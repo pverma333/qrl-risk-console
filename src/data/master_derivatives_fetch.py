@@ -46,9 +46,17 @@ class DerivativesFetcher:
 
     # Public Runner
     def run(self, start_date: date, end_date: date):
-        if self.rebuild and self.master_file.exists():
-            self.master_file.unlink()
-            self.logger.info("Existing master file deleted for rebuild mode.")
+
+        if self.rebuild:
+            for folder in self.raw_path.iterdir():
+                if folder.is_dir():
+                    for file in folder.iterdir():
+                        file.unlink()
+
+            if self.master_file.exists():
+                self.master_file.unlink()
+
+            self.logger.info("Rebuild mode: raw yearly files and master deleted.")
 
         curr = start_date
         batch_data = []
