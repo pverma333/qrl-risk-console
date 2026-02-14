@@ -7,6 +7,7 @@ import pandas as pd
 from datetime import date, timedelta
 from pathlib import Path
 from jugaad_data.nse import bhavcopy_fo_save
+from src.core.fetch_config import FetchConfig
 
 
 class DerivativesFetcher:
@@ -25,27 +26,30 @@ class DerivativesFetcher:
         'OPEN_INT', 'CHG_IN_OI', 'TIMESTAMP'
     ]
 
-    def __init__(self, base_dir: Path, batch_size: int = 30):
-        self.base_dir = base_dir
-        self.raw_path = base_dir / "data" / "raw"
-        self.processed_path = base_dir / "data" / "processed"
+    def __init__(self, config: FetchConfig, batch_size: int = 30, rebuild: bool = False):
+
+        self.config = config
+        self.raw_path = config.raw_dir
+        self.processed_path = config.processed_dir
         self.master_file = self.processed_path / "Nifty_Historical_Derivatives.csv"
         self.batch_size = batch_size
-        self.raw_path.mkdir(parents=True, exist_ok=True)
-        self.processed_path.mkdir(parents=True, exist_ok=True)
+        self.rebuild = rebuild
 
-        #logging
-        self.log_path = base_dir / "logs"
-        self.log_path.mkdir(parents=True, exist_ok=True)
+        self.log_path = config.logs_dir
+
         logging.basicConfig(
-        filename=self.log_path / "master_derivatives_fetch.log",
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(message)s"
+            filename=self.log_path / "master_derivatives_fetch.log",
+            level=logging.INFO,
+            format="%(asctime)s | %(name)s | %(levelname)s | %(message)s"
         )
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("DerivativesFetcher")
 
     # Public Runner
     def run(self, start_date: date, end_date: date):
+        if self.rebuild and self.master_file.exists():
+            self.master_file.unlink()
+            self.logger.info("Existing master file deleted for rebuild mode.")
+
         curr = start_date
         batch_data = []
         while curr <= end_date:
@@ -76,8 +80,7 @@ class DerivativesFetcher:
 
     # Jugaad/bhaavcopy Fetch (Pre July 2024)
     def _fetch_jugaad(self, target_date: date):
-        year_folder = self.raw_path / str(target_date.year)
-        year_folder.mkdir(parents=True, exist_ok=True)
+        year_folder = self.config.get_year_raw_dir(target_date.year)
 
         file_path = bhavcopy_fo_save(target_date, str(year_folder))
 
@@ -99,6 +102,7 @@ class DerivativesFetcher:
 
     # NSE Archive Fetch (Post July 2024)
     def _fetch_archive(self, target_date: date):
+        year_folder = self.config.get_year_raw_dir(target_date.year)
         url = (
             f"https://nsearchives.nseindia.com/content/fo/"
             f"BhavCopy_NSE_FO_0_0_0_{target_date.strftime('%Y%m%d')}_F_0000.csv.zip"
@@ -146,12 +150,8 @@ class DerivativesFetcher:
         final_df['YEAR'] = pd.to_datetime(final_df['TIMESTAMP']).dt.year
 
         for year, year_df in final_df.groupby('YEAR'):
-
-            year_folder = self.raw_path / str(year)
-            year_folder.mkdir(parents=True, exist_ok=True)
-
+            year_folder = self.config.get_year_raw_dir(year)
             year_file = year_folder / f"Nifty_Derivatives_{year}.csv"
-
             year_header = not year_file.exists()
             year_df.drop(columns=['YEAR']).to_csv(
                 year_file,
@@ -160,13 +160,20 @@ class DerivativesFetcher:
                 header=year_header
             )
 
-            # Append yearly data to master
-            master_header = not self.master_file.exists()
+            # create new file not append
+            if self.rebuild:
+                mode = 'w'
+                header = True
+                self.rebuild = False   # only recreate once
+            else:
+                mode = 'a'
+                header = not self.master_file.exists()
+
             year_df.drop(columns=['YEAR']).to_csv(
                 self.master_file,
-                mode='a',
+                mode=mode,
                 index=False,
-                header=master_header
+                header=header
             )
 
             self.logger.info(f"Year {year} saved and appended to master")
