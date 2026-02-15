@@ -38,7 +38,7 @@ class DerivativesFetcher:
         self.log_path = config.logs_dir
 
         logging.basicConfig(
-            filename=self.log_path / "master_derivatives_fetch.log",
+            filename=self.log_path / "data_pipeline_fetch.log",
             level=logging.INFO,
             format="%(asctime)s | %(name)s | %(levelname)s | %(message)s"
         )

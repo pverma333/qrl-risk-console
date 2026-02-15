@@ -22,7 +22,7 @@ class MasterIndexFetcher:
         self.delay = delay
 
         logging.basicConfig(
-            filename=self.log_path / "master_index_fetch.log",
+            filename=self.log_path / "data_pipeline_fetch.log",
             level=logging.INFO,
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
