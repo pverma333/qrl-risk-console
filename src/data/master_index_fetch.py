@@ -4,7 +4,7 @@ import io
 import time
 import logging
 from datetime import date, timedelta
-from pathlib import Path
+from src.core.fetch_config import FetchConfig
 
 class MasterIndexFetcher:
 
@@ -12,23 +12,21 @@ class MasterIndexFetcher:
         "User-Agent": "Mozilla/5.0"
     }
 
-    def __init__(self, base_dir: Path, max_retries: int = 3, save_interval: int = 20,delay: float = 0.15):
-        self.base_dir = base_dir
-        self.raw_path = base_dir / "data" / "raw"
-        self.log_path = base_dir / "logs"
-
+    def __init__(self, config: FetchConfig, max_retries: int = 3, save_interval: int = 20,delay: float = 0.15):
+        self.config = config
+        self.raw_path = config.raw_dir
+        self.log_path = config.logs_dir
+        self.processed_path = config.processed_dir
         self.max_retries = max_retries
         self.save_interval = save_interval
         self.delay = delay
 
-        self.raw_path.mkdir(parents=True, exist_ok=True)
-        self.log_path.mkdir(parents=True, exist_ok=True)
-
         logging.basicConfig(
-            filename=self.log_path / "master_index_fetch.log",
+            filename=self.log_path / "data_pipeline_fetch.log",
             level=logging.INFO,
-            format="%(asctime)s - %(levelname)s - %(message)s"
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
+        self.logger = logging.getLogger("IndexFetcher")
 
     # Fetch Index archives
     def fetch_daily_archive(self, target_date: date):
@@ -44,14 +42,14 @@ class MasterIndexFetcher:
                     df.columns = [c.strip() for c in df.columns]
                     return df
                 elif response.status_code == 404:
-                    logging.info(f"Holiday / No data: {target_date}")
+                    self.logger.info(f"Holiday / No data: {target_date}")
                     return None
                 else:
-                    logging.warning(f"Status {response.status_code} for {target_date}")
+                    self.logger.warning(f"Status {response.status_code} for {target_date}")
             except Exception as e:
-                logging.error(f"Attempt {attempt} failed for {target_date}: {e}")
+                self.logger.error(f"Attempt {attempt} failed for {target_date}: {e}")
             time.sleep(2 ** attempt)
-        logging.error(f"Failed after retries: {target_date}")
+        self.logger.error(f"Failed after retries: {target_date}")
         return None
 
     # Core Runner
@@ -59,13 +57,14 @@ class MasterIndexFetcher:
 
         if start_date > end_date:
             raise ValueError("Start date must be before end date.")
+        self.logger.info("Running in rebuild mode. Existing processed files will be overwritten.")
 
         spot_data = []
         vix_data = []
         curr = start_date
         processed_count = 0
 
-        logging.info(f"Fetch started: {start_date} to {end_date}")
+        self.logger.info(f"Fetch started: {start_date} to {end_date}")
 
         while curr <= end_date:
 
@@ -78,12 +77,7 @@ class MasterIndexFetcher:
             if df is not None:
 
                 # Spot
-                spot_filter = df[df['Index Name'].isin([
-                    'Nifty 50',
-                    'Nifty Bank',
-                    'Nifty Financial Services',
-                    'Nifty Midcap Select'
-                ])].copy()
+                spot_filter = df[df["Index Name"].isin(self.config.index_names)].copy()
 
                 if not spot_filter.empty:
                     spot_filter['Date'] = curr.strftime('%Y-%m-%d')
@@ -116,7 +110,7 @@ class MasterIndexFetcher:
 
         self.save_final(spot_data, vix_data)
 
-        logging.info("Fetch completed successfully.")
+        self.logger.info("Fetch completed successfully.")
 
     # Save Helpers
     def _save_partial(self, spot_data, vix_data):
@@ -135,8 +129,8 @@ class MasterIndexFetcher:
 
     def save_final(self, spot_data, vix_data):
 
-        spot_final_path = self.raw_path / "Index_Spot_Prices.csv"
-        vix_final_path = self.raw_path / "India_VIX_Historical.csv"
+        spot_final_path = self.processed_path / "Index_Spot_Prices.csv"
+        vix_final_path = self.processed_path / "India_VIX_Historical.csv"
 
         spot_partial_path = self.raw_path / "Index_Spot_Prices_partial.csv"
         vix_partial_path = self.raw_path / "India_VIX_Historical_partial.csv"
@@ -169,8 +163,8 @@ class MasterIndexFetcher:
             if vix_partial_path.exists():
                 vix_partial_path.unlink()
 
-            logging.info("Final save successful. Partial files removed.")
+            self.logger.info("Final save successful. Partial files removed.")
 
         except Exception as e:
-            logging.error(f"Final save failed. Partial files retained. Error: {e}")
+            self.logger.error(f"Final save failed. Partial files retained. Error: {e}")
             raise
