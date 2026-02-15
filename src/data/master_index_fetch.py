@@ -24,7 +24,7 @@ class MasterIndexFetcher:
         logging.basicConfig(
             filename=self.log_path / "data_pipeline_fetch.log",
             level=logging.INFO,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            format="%(asctime)s | %(name)s | %(levelname)s | %(message)s"
         )
         self.logger = logging.getLogger("IndexFetcher")
 

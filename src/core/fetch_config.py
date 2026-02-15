@@ -28,6 +28,16 @@ class FetchConfig:
         ]
     )
 
+    # Yield symbols
+    yield_names: List[str] = field(
+        default_factory=lambda: [
+            "Nifty 50",
+            "NIFTY BANK",
+            "NIFTY FIN SERVICE",
+            "NIFTY MID SELECT",
+        ]
+    )
+
     def __post_init__(self):
         self.data_dir = self.base_dir / "data"
         self.raw_dir = self.data_dir / "raw"
