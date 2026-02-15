@@ -9,14 +9,11 @@ sys.path.append(str(BASE_DIR))
 from src.core.fetch_config import FetchConfig
 from src.data.master_derivatives_fetch import DerivativesFetcher
 from src.data.master_index_fetch import MasterIndexFetcher
-
+from src.data.master_index_yield_fetch import MasterIndexYieldFetcher
 
 def parse_date(date_str: str):
     return datetime.strptime(date_str, "%Y-%m-%d").date()
-
-
 def main():
-
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--start", required=True)
@@ -24,6 +21,7 @@ def main():
 
     parser.add_argument("--derivatives-only", action="store_true")
     parser.add_argument("--index-only", action="store_true")
+    parser.add_argument("--yield-only", action="store_true")
 
     parser.add_argument("--rebuild", action="store_true")
 
@@ -34,12 +32,15 @@ def main():
 
     config = FetchConfig(BASE_DIR, use_year_partition=True)
 
-    # Safety: cannot select both flags
-    if args.derivatives_only and args.index_only:
-        raise ValueError("Cannot use both --derivatives-only and --index-only")
+    # If no specific flag → run everything
+    run_all = not (
+        args.derivatives_only or
+        args.index_only or
+        args.yield_only
+    )
 
-    # Run Derivatives
-    if not args.index_only:
+    # Derivatives
+    if run_all or args.derivatives_only:
         derivatives_fetcher = DerivativesFetcher(
             config=config,
             rebuild=args.rebuild
@@ -50,8 +51,8 @@ def main():
             end_date=end_date
         )
 
-    # Run Index
-    if not args.derivatives_only:
+    # Index Price
+    if run_all or args.index_only:
         index_fetcher = MasterIndexFetcher(config=config)
 
         index_fetcher.run(
@@ -59,6 +60,14 @@ def main():
             end_date=end_date
         )
 
+    # Index Yield
+    if run_all or args.yield_only:
+        yield_fetcher = MasterIndexYieldFetcher(config=config)
+
+        yield_fetcher.run(
+            start_date=start_date,
+            end_date=end_date
+        )
 
 if __name__ == "__main__":
     main()
@@ -74,5 +83,8 @@ python -m scripts.run_data_pipeline --start 2024-01-01 --end 2026-02-12 --deriva
 #run index
 """
 python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-12 --index-only
-
+"""
+#run index yield only
+"""
+python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-12 --index-only
 """
