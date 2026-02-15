@@ -5,7 +5,6 @@ import io
 import logging
 import pandas as pd
 from datetime import date, timedelta
-from pathlib import Path
 from jugaad_data.nse import bhavcopy_fo_save
 from src.core.fetch_config import FetchConfig
 
@@ -31,9 +30,10 @@ class DerivativesFetcher:
         self.config = config
         self.raw_path = config.raw_dir
         self.processed_path = config.processed_dir
-        self.master_file = self.processed_path / "Nifty_Historical_Derivatives.csv"
+        self.master_file = self.processed_path / config.master_derivatives_filename
         self.batch_size = batch_size
         self.rebuild = rebuild
+        self._yearly_unknown_symbols = {}
 
         self.log_path = config.logs_dir
 
@@ -60,22 +60,29 @@ class DerivativesFetcher:
 
         curr = start_date
         batch_data = []
+
         while curr <= end_date:
             if curr.weekday() >= 5:
                 curr += timedelta(days=1)
                 continue
+
             try:
                 df = self._fetch_by_date(curr)
+
                 if df is not None and not df.empty:
                     batch_data.append(df)
                     self.logger.info(f"Processed: {curr}")
+
                 if len(batch_data) >= self.batch_size:
                     self._save(batch_data)
                     batch_data = []
+
             except Exception as e:
                 self.logger.info(f"Error on {curr}: {e}")
+
             curr += timedelta(days=1)
             time.sleep(1.0)
+
         if batch_data:
             self._save(batch_data)
 
@@ -86,13 +93,13 @@ class DerivativesFetcher:
         else:
             return self._fetch_archive(target_date)
 
-    # Jugaad/bhaavcopy Fetch (Pre July 2024)
+    # Pre July 2024
     def _fetch_jugaad(self, target_date: date):
         year_folder = self.config.get_year_raw_dir(target_date.year)
-
         file_path = bhavcopy_fo_save(target_date, str(year_folder))
 
         df = pd.read_csv(file_path)
+
         mapping = {
             'TradDt': 'TIMESTAMP', 'BizDt': 'TIMESTAMP',
             'InstrmntType': 'INSTRUMENT',
@@ -105,22 +112,27 @@ class DerivativesFetcher:
             'OpnIntrst': 'OPEN_INT',
             'ChngInOpnIntrst': 'CHG_IN_OI'
         }
+
         df = df.rename(columns=mapping)
         return self._standardize(df, target_date)
 
-    # NSE Archive Fetch (Post July 2024)
+    # Post July 2024
     def _fetch_archive(self, target_date: date):
         year_folder = self.config.get_year_raw_dir(target_date.year)
+
         url = (
             f"https://nsearchives.nseindia.com/content/fo/"
             f"BhavCopy_NSE_FO_0_0_0_{target_date.strftime('%Y%m%d')}_F_0000.csv.zip"
         )
+
         response = requests.get(url, headers=self.HEADERS, timeout=15)
         if response.status_code == 404:
             return None
+
         with zipfile.ZipFile(io.BytesIO(response.content)) as z:
             with z.open(z.namelist()[0]) as f:
                 df = pd.read_csv(f)
+
         mapping = {
             'FinInstrmId': 'INSTRUMENT',
             'TckrSymb': 'SYMBOL',
@@ -136,48 +148,70 @@ class DerivativesFetcher:
             'OpnIntrst': 'OPEN_INT',
             'ChngInOpnIntrst': 'CHG_IN_OI'
         }
+
         df = df.rename(columns=mapping)
         return self._standardize(df, target_date)
 
     # Standardization
     def _standardize(self, df, target_date):
+
         df.columns = [c.strip() for c in df.columns]
-        df = df[df['SYMBOL'].isin(['NIFTY', 'BANKNIFTY','FINNIFTY','MIDCPNIFTY'])].copy()
-        df['STRIKE_PR'] = pd.to_numeric(df['STRIKE_PR'], errors='coerce').fillna(0)
-        df['INSTRUMENT'] = df.apply(
-            lambda x: 'FUTIDX' if x['STRIKE_PR'] == 0 else 'OPTIDX',
-            axis=1
-        )
-        df['TIMESTAMP'] = target_date.strftime('%Y-%m-%d')
+
+        # Detect unknown symbols BEFORE filtering
+        all_symbols = set(df["SYMBOL"].unique())
+        allowed = set(self.config.derivatives_symbols)
+        unknown_symbols = all_symbols - allowed
+
+        if unknown_symbols:
+            year = target_date.year
+            if year not in self._yearly_unknown_symbols:
+                self._yearly_unknown_symbols[year] = set()
+            self._yearly_unknown_symbols[year].update(unknown_symbols)
+
+        # Filter universe
+        df = df[df["SYMBOL"].isin(allowed)].copy()
+
+        df["STRIKE_PR"] = pd.to_numeric(df["STRIKE_PR"], errors="coerce").fillna(0)
+
+        # Vectorized instrument classification
+        df["INSTRUMENT"] = "OPTIDX"
+        df.loc[df["STRIKE_PR"] == 0, "INSTRUMENT"] = "FUTIDX"
+
+        df["TIMESTAMP"] = target_date.strftime("%Y-%m-%d")
+
         df = df.reindex(columns=self.COLS)
+
         return df
 
     # Save
     def _save(self, data_list):
-        final_df = pd.concat(data_list, ignore_index=True)
-        final_df['YEAR'] = pd.to_datetime(final_df['TIMESTAMP']).dt.year
 
-        for year, year_df in final_df.groupby('YEAR'):
+        final_df = pd.concat(data_list, ignore_index=True)
+        final_df["YEAR"] = pd.to_datetime(final_df["TIMESTAMP"]).dt.year
+
+        for year, year_df in final_df.groupby("YEAR"):
+
             year_folder = self.config.get_year_raw_dir(year)
-            year_file = year_folder / f"Nifty_Derivatives_{year}.csv"
+            year_file = year_folder / f"Derivatives_{year}.csv"
+
             year_header = not year_file.exists()
-            year_df.drop(columns=['YEAR']).to_csv(
+
+            year_df.drop(columns=["YEAR"]).to_csv(
                 year_file,
-                mode='a',
+                mode="a",
                 index=False,
                 header=year_header
             )
 
-            # create new file not append
             if self.rebuild:
-                mode = 'w'
+                mode = "w"
                 header = True
-                self.rebuild = False   # only recreate once
+                self.rebuild = False
             else:
-                mode = 'a'
+                mode = "a"
                 header = not self.master_file.exists()
 
-            year_df.drop(columns=['YEAR']).to_csv(
+            year_df.drop(columns=["YEAR"]).to_csv(
                 self.master_file,
                 mode=mode,
                 index=False,
@@ -185,11 +219,16 @@ class DerivativesFetcher:
             )
 
             self.logger.info(f"Year {year} saved and appended to master")
+            if year in self._yearly_unknown_symbols:
+                self.logger.info(
+                    f"Year {year} - Unknown symbols encountered: "
+                    f"{sorted(self._yearly_unknown_symbols[year])}"
+                )
+                del self._yearly_unknown_symbols[year]
 
-            # Delete daily raw files except yearly file
+            # Clean daily raw files
             for file in year_folder.iterdir():
                 if file.name != year_file.name:
                     file.unlink()
 
             self.logger.info(f"Cleaned raw daily files for {year}")
-

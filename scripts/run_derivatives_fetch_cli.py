@@ -20,7 +20,6 @@ def main():
     parser.add_argument("--end", required=True)
     parser.add_argument("--rebuild", action="store_true")
 
-
     args = parser.parse_args()
 
     config = FetchConfig(BASE_DIR, use_year_partition=True)
@@ -37,5 +36,6 @@ if __name__ == "__main__":
 #Run script
 """
 python -m scripts.run_derivatives_fetch_cli --start 2019-01-01 --end 2026-02-12 --rebuild
+python -m scripts.run_derivatives_fetch_cli --start 2024-05-01 --end 2026-02-12 --rebuild
 """
 
