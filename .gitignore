@@ -16,7 +16,7 @@ env/
 .ipynb_checkpoints/
 
 # Data folders (rely on local data; repo only has code)
-data/ingest/
+data/ingest
 data/processed/
 data/curated/
 data/derived/
