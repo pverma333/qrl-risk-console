@@ -6,7 +6,6 @@ from typing import List, Dict, Optional, Tuple, ClassVar
 class FetchConfig:
     base_dir: Path
     use_year_partition: bool = False
-    master_derivatives_filename: str = "Historical_Derivatives.parquet"
     lot_size_map_csv_name: str = "lot_size_map.csv"
     lot_size_map_parquet_name: str = "lot_size_map.parquet"
 
@@ -74,16 +73,17 @@ class FetchConfig:
 
     def __post_init__(self):
         self.data_dir = self.base_dir / "data"
-        self.raw_dir = self.data_dir / "raw"
+        self.ingest_dir = self.data_dir / "ingest"
+        self.processed_dir = self.data_dir / "processed"
         self.logs_dir = self.base_dir / "logs"
         self._create_base_dirs()
 
     def _create_base_dirs(self):
-        for d in [self.data_dir, self.raw_dir, self.logs_dir]:
+        for d in [self.data_dir, self.ingest_dir, self.logs_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
-    def get_year_raw_dir(self, namespace: str ,year: Optional[int] = None) -> Path:
-        base_path = self.raw_dir/namespace
+    def get_year_ingest_dir(self, namespace: str ,year: Optional[int] = None) -> Path:
+        base_path = self.ingest_dir/namespace
         base_path.mkdir(parents=True,exist_ok=True)
 
         if self.use_year_partition and year is not None:

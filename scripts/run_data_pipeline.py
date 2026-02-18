@@ -10,9 +10,11 @@ from src.core.fetch_config import FetchConfig
 from src.data.master_derivatives_fetch import DerivativesFetcher
 from src.data.master_index_fetch import MasterIndexFetcher
 from src.data.master_index_yield_fetch import MasterIndexYieldFetcher
+from src.data.master_combined_gbond import GbondProcessor
 
 def parse_date(date_str: str):
     return datetime.strptime(date_str, "%Y-%m-%d").date()
+
 def main():
     parser = argparse.ArgumentParser()
 
@@ -22,6 +24,7 @@ def main():
     parser.add_argument("--derivatives-only", action="store_true")
     parser.add_argument("--index-only", action="store_true")
     parser.add_argument("--yield-only", action="store_true")
+    parser.add_argument("--bond-only", action="store_true")
 
     parser.add_argument("--rebuild", action="store_true")
 
@@ -36,7 +39,8 @@ def main():
     run_all = not (
         args.derivatives_only or
         args.index_only or
-        args.yield_only
+        args.yield_only or
+        args.bond_only
     )
 
     # Derivatives
@@ -69,6 +73,16 @@ def main():
             end_date=end_date
         )
 
+    # Gbond Combine   ← Added
+    if run_all or args.bond_only:
+        bond_processor = GbondProcessor(
+            config=config,
+            rebuild=args.rebuild
+        )
+
+        bond_processor.build_combined_gbond()
+
+
 if __name__ == "__main__":
     main()
 
@@ -90,4 +104,8 @@ python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-12 --index-
 #run index yield only
 """
 python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-12 --index-only
+"""
+#run bond only
+"""
+python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-17 --bond-only
 """
