@@ -28,9 +28,7 @@ class DerivativesFetcher:
     def __init__(self, config: FetchConfig, batch_size: int = 30, rebuild: bool = False):
 
         self.config = config
-        self.raw_path = config.raw_dir
-        self.processed_path = config.processed_dir
-        self.master_file = self.processed_path / config.master_derivatives_filename
+        self.namespace = "derivatives"
         self.batch_size = batch_size
         self.rebuild = rebuild
         self._yearly_unknown_symbols = {}
@@ -48,13 +46,12 @@ class DerivativesFetcher:
     def run(self, start_date: date, end_date: date):
 
         if self.rebuild:
-            for folder in self.raw_path.iterdir():
-                if folder.is_dir():
-                    for file in folder.iterdir():
-                        file.unlink()
+            base_folder = self.config.get_year_raw_dir(self.namespace)
 
-            if self.master_file.exists():
-                self.master_file.unlink()
+            if base_folder.exists():
+                for item in base_folder.rglob("*"):
+                    if item.is_file():
+                        item.unlink()
 
             self.logger.info("Rebuild mode: raw yearly files and master deleted.")
 
@@ -95,7 +92,7 @@ class DerivativesFetcher:
 
     # Pre July 2024
     def _fetch_jugaad(self, target_date: date):
-        year_folder = self.config.get_year_raw_dir(target_date.year)
+        year_folder = self.config.get_year_raw_dir(self.namespace,target_date.year)
         file_path = bhavcopy_fo_save(target_date, str(year_folder))
 
         df = pd.read_csv(file_path)
@@ -118,7 +115,7 @@ class DerivativesFetcher:
 
     # Post July 2024
     def _fetch_archive(self, target_date: date):
-        year_folder = self.config.get_year_raw_dir(target_date.year)
+        year_folder = self.config.get_year_raw_dir(self.namespace,target_date.year)
 
         url = (
             f"https://nsearchives.nseindia.com/content/fo/"
@@ -191,34 +188,22 @@ class DerivativesFetcher:
 
         for year, year_df in final_df.groupby("YEAR"):
 
-            year_folder = self.config.get_year_raw_dir(year)
-            year_file = year_folder / f"Derivatives_{year}.csv"
+            year_folder = self.config.get_year_raw_dir(self.namespace,year)
+            year_file = year_folder / f"Derivatives_{year}.parquet"
 
-            year_header = not year_file.exists()
+            new_data = year_df.drop(columns=["YEAR"])
 
-            year_df.drop(columns=["YEAR"]).to_csv(
-                year_file,
-                mode="a",
-                index=False,
-                header=year_header
-            )
-
-            if self.rebuild:
-                mode = "w"
-                header = True
-                self.rebuild = False
+            if year_file.exists():
+                existing = pd.read_parquet(year_file)
+                combined = pd.concat([existing, new_data], ignore_index=True)
+                combined.drop_duplicates(subset=["TIMESTAMP", "SYMBOL", "EXPIRY_DT", "STRIKE_PR", "OPTION_TYP"],inplace=True)
             else:
-                mode = "a"
-                header = not self.master_file.exists()
+                combined = new_data
 
-            year_df.drop(columns=["YEAR"]).to_csv(
-                self.master_file,
-                mode=mode,
-                index=False,
-                header=header
-            )
+            combined.to_parquet(year_file, index=False)
 
-            self.logger.info(f"Year {year} saved and appended to master")
+            self.logger.info(f"Year {year} saved (parquet overwrite)")
+
             if year in self._yearly_unknown_symbols:
                 self.logger.info(
                     f"Year {year} - Unknown symbols encountered: "
@@ -228,7 +213,8 @@ class DerivativesFetcher:
 
             # Clean daily raw files
             for file in year_folder.iterdir():
-                if file.name != year_file.name:
+                if file.suffix == ".csv":
                     file.unlink()
 
             self.logger.info(f"Cleaned raw daily files for {year}")
+

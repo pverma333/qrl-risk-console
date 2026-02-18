@@ -14,9 +14,9 @@ class MasterIndexFetcher:
 
     def __init__(self, config: FetchConfig, max_retries: int = 3, save_interval: int = 20,delay: float = 0.15):
         self.config = config
-        self.raw_path = config.raw_dir
+        self.spot_namespace = "index_spot"
+        self.vix_namespace = "vix"
         self.log_path = config.logs_dir
-        self.processed_path = config.processed_dir
         self.max_retries = max_retries
         self.save_interval = save_interval
         self.delay = delay
@@ -57,7 +57,7 @@ class MasterIndexFetcher:
 
         if start_date > end_date:
             raise ValueError("Start date must be before end date.")
-        self.logger.info("Running in rebuild mode. Existing processed files will be overwritten.")
+        self.logger.info("Running in rebuild mode. Existing raw spot and VIX parquet files will be replaced.")
 
         spot_data = []
         vix_data = []
@@ -116,43 +116,54 @@ class MasterIndexFetcher:
     def _save_partial(self, spot_data, vix_data):
 
         if spot_data:
-            pd.concat(spot_data, ignore_index=True).to_csv(
-                self.raw_path / "Index_Spot_Prices_partial.csv",
+            spot_folder = self.config.get_year_raw_dir(self.spot_namespace)
+            pd.concat(spot_data, ignore_index=True).to_parquet(
+                spot_folder / "Index_Spot_Prices_partial.parquet",
                 index=False
             )
 
         if vix_data:
-            pd.concat(vix_data, ignore_index=True).to_csv(
-                self.raw_path / "India_VIX_Historical_partial.csv",
+            vix_folder = self.config.get_year_raw_dir(self.vix_namespace)
+            pd.concat(vix_data, ignore_index=True).to_parquet(
+                vix_folder / "India_VIX_Historical_partial.parquet",
                 index=False
             )
 
     def save_final(self, spot_data, vix_data):
 
-        spot_final_path = self.processed_path / "Index_Spot_Prices.csv"
-        vix_final_path = self.processed_path / "India_VIX_Historical.csv"
+        spot_folder = self.config.get_year_raw_dir(self.spot_namespace)
+        vix_folder = self.config.get_year_raw_dir(self.vix_namespace)
 
-        spot_partial_path = self.raw_path / "Index_Spot_Prices_partial.csv"
-        vix_partial_path = self.raw_path / "India_VIX_Historical_partial.csv"
+        spot_final_path = spot_folder / "Index_Spot_Prices.parquet"
+        vix_final_path = vix_folder / "India_VIX_Historical.parquet"
+
+        spot_partial_path = spot_folder / "Index_Spot_Prices_partial.parquet"
+        vix_partial_path = vix_folder / "India_VIX_Historical_partial.parquet"
 
         try:
             # Save Spot Final
             if spot_data:
-                pd.concat(spot_data, ignore_index=True).to_csv(
-                    spot_final_path,
-                    index=False
-                )
-
+                new_spot = pd.concat(spot_data,ignore_index = True)
+                if spot_final_path.exists():
+                    existing_spot = pd.read_parquet(spot_final_path)
+                    combined_spot = pd.concat([existing_spot,new_spot], ignore_index=True)
+                    combined_spot.drop_duplicates(subset=["Date","Index"],inplace = True)
+                else:
+                    combined_spot = new_spot
+                combined_spot.to_parquet(spot_final_path,index=False)
                 if not spot_final_path.exists():
                     raise Exception("Spot final file not created.")
 
             # Save VIX Final
             if vix_data:
-                pd.concat(vix_data, ignore_index=True).to_csv(
-                    vix_final_path,
-                    index=False
-                )
-
+                new_vix = pd.concat(vix_data,ignore_index = True)
+                if vix_final_path.exists():
+                    existing_vix = pd.read_parquet(vix_final_path)
+                    combined_vix = pd.concat([existing_vix,new_vix], ignore_index=True)
+                    combined_vix.drop_duplicates(subset=["Date"],inplace = True)
+                else:
+                    combined_vix = new_vix
+                combined_vix.to_parquet(vix_final_path,index=False)
                 if not vix_final_path.exists():
                     raise Exception("VIX final file not created.")
 

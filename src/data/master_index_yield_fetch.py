@@ -9,9 +9,8 @@ class MasterIndexYieldFetcher:
 
     def __init__(self,config: FetchConfig,max_retries: int = 3,save_interval: int = 20,delay: float = 0.15):
         self.config = config
-        self.raw_path = config.raw_dir
-        self.processed_path = config.processed_dir
         self.log_path = config.logs_dir
+        self.namespace = "index_yield"
 
         self.indices = config.yield_names
         self.max_retries = max_retries
@@ -24,9 +23,6 @@ class MasterIndexYieldFetcher:
             format="%(asctime)s | %(name)s | %(levelname)s | %(message)s"
         )
         self.logger = logging.getLogger("IndexYieldFetcher")
-
-        self.final_file = self.processed_path / "Index_Dividend_Yield_Historical.csv"
-        self.partial_file = self.raw_path / "Index_Dividend_Yield_partial.csv"
 
     # Fetch single snapshot
     def fetch_snapshot(self, index_name: str, target_date: date):
@@ -68,11 +64,14 @@ class MasterIndexYieldFetcher:
         if start_date > end_date:
             raise ValueError("Start date must be before end date.")
         # rebuild
-        if self.final_file.exists():
-            self.final_file.unlink()
-        self.logger.info(
-            "Running in rebuild mode. Existing processed file will be overwritten."
-        )
+        base_folder = self.config.get_year_raw_dir(self.namespace)
+        final_file = base_folder/"Index_Dividend_Yield.parquet"
+
+        if final_file.exists():
+            final_file.unlink()
+
+        self.logger.info("Running in rebuild mode. Existing raw yield file will be overwritten.")
+
         self.logger.info(f"Index Yield Fetch started: {start_date} to {end_date}")
         yield_data = []
         curr = start_date
@@ -95,22 +94,32 @@ class MasterIndexYieldFetcher:
     # Partial Save
     def _save_partial(self, yield_data):
         if yield_data:
-            pd.concat(yield_data, ignore_index=True).to_csv(
-                self.partial_file,
+            base_folder = self.config.get_year_raw_dir(self.namespace)
+            partial_file = base_folder/"Index_Dividend_Yield_partial.parquet"
+            pd.concat(yield_data, ignore_index=True).to_parquet(
+                partial_file,
                 index=False
             )
     # Final Save
     def _save_final(self, yield_data):
         try:
+            base_folder = self.config.get_year_raw_dir(self.namespace)
+            final_file = base_folder/"Index_Dividend_Yield.parquet"
+            partial_file = base_folder/"Index_Dividend_Yield_partial.parquet"
+
             if yield_data:
-                pd.concat(yield_data, ignore_index=True).to_csv(
-                    self.final_file,
-                    index=False
-                )
-                if not self.final_file.exists():
-                    raise Exception("Final file not created.")
-            if self.partial_file.exists():
-                self.partial_file.unlink()
+                new_data = pd.concat(yield_data, ignore_index=True)
+                if final_file.exists():
+                    existing = pd.read_parquet(final_file)
+                    combined = pd.concat([existing, new_data], ignore_index=True)
+                    combined.drop_duplicates(subset=["DATE", "INDEX"], inplace=True)
+                else:
+                    combined = new_data
+                combined.to_parquet(final_file, index=False)
+            if not final_file.exists():
+                raise Exception("Final file not created.")
+            if partial_file.exists():
+                partial_file.unlink()
             self.logger.info("Final save successful. Partial file removed.")
         except Exception as e:
             self.logger.error(
