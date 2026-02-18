@@ -36,6 +36,6 @@ if __name__ == "__main__":
 #Run script
 """
 python -m scripts.run_derivatives_fetch_cli --start 2019-01-01 --end 2026-02-12 --rebuild
-python -m scripts.run_derivatives_fetch_cli --start 2024-05-01 --end 2026-02-12 --rebuild
+python -m scripts.run_derivatives_fetch_cli --start 2025-12-01 --end 2026-02-12 --rebuild
 """
 

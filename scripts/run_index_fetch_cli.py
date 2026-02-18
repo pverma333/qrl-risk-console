@@ -38,5 +38,6 @@ if __name__ == "__main__":
 # Run Script
 """
 --> python -m scripts.run_index_fetch_cli --start 2019-01-01 --end 2026-02-12
+python -m scripts.run_index_fetch_cli --start 2025-12-01 --end 2026-02-12
 
 """
