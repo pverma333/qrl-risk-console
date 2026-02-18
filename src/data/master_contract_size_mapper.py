@@ -8,8 +8,8 @@ class LotSizeMapStore:
 
     def __init__(self, config: FetchConfig):
         self.config = config
-        self.raw_path = config.raw_dir
-        self.map_file = self.raw_path / config.lot_size_map_csv_name
+        self.ingest_path = config.ingest_dir
+        self.map_file = self.ingest_path / config.lot_size_map_csv_name
         self._cache = None
 
     def get_map(self, force_reload=False):
@@ -41,7 +41,7 @@ class LotSizeMapStore:
                 end_str = "" if end is None else end
                 rows.append(f"{sym},{start},{end_str},{lot}")
 
-        self.raw_path.mkdir(parents=True, exist_ok=True)
+        self.ingest_path.mkdir(parents=True, exist_ok=True)
         self.map_file.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
     def _normalize(self, df):

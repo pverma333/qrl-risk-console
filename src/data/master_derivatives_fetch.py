@@ -46,14 +46,14 @@ class DerivativesFetcher:
     def run(self, start_date: date, end_date: date):
 
         if self.rebuild:
-            base_folder = self.config.get_year_raw_dir(self.namespace)
+            base_folder = self.config.get_year_ingest_dir(self.namespace)
 
             if base_folder.exists():
                 for item in base_folder.rglob("*"):
                     if item.is_file():
                         item.unlink()
 
-            self.logger.info("Rebuild mode: raw yearly files and master deleted.")
+            self.logger.info("Rebuild mode: ingest yearly files and master deleted.")
 
         curr = start_date
         batch_data = []
@@ -92,7 +92,7 @@ class DerivativesFetcher:
 
     # Pre July 2024
     def _fetch_jugaad(self, target_date: date):
-        year_folder = self.config.get_year_raw_dir(self.namespace,target_date.year)
+        year_folder = self.config.get_year_ingest_dir(self.namespace,target_date.year)
         file_path = bhavcopy_fo_save(target_date, str(year_folder))
 
         df = pd.read_csv(file_path)
@@ -115,7 +115,7 @@ class DerivativesFetcher:
 
     # Post July 2024
     def _fetch_archive(self, target_date: date):
-        year_folder = self.config.get_year_raw_dir(self.namespace,target_date.year)
+        year_folder = self.config.get_year_ingest_dir(self.namespace,target_date.year)
 
         url = (
             f"https://nsearchives.nseindia.com/content/fo/"
@@ -188,7 +188,7 @@ class DerivativesFetcher:
 
         for year, year_df in final_df.groupby("YEAR"):
 
-            year_folder = self.config.get_year_raw_dir(self.namespace,year)
+            year_folder = self.config.get_year_ingest_dir(self.namespace,year)
             year_file = year_folder / f"Derivatives_{year}.parquet"
 
             new_data = year_df.drop(columns=["YEAR"])
@@ -211,10 +211,10 @@ class DerivativesFetcher:
                 )
                 del self._yearly_unknown_symbols[year]
 
-            # Clean daily raw files
+            # Clean daily ingested files
             for file in year_folder.iterdir():
                 if file.suffix == ".csv":
                     file.unlink()
 
-            self.logger.info(f"Cleaned raw daily files for {year}")
+            self.logger.info(f"Cleaned ingested daily files for {year}")
 

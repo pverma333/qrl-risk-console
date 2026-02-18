@@ -57,7 +57,7 @@ class MasterIndexFetcher:
 
         if start_date > end_date:
             raise ValueError("Start date must be before end date.")
-        self.logger.info("Running in rebuild mode. Existing raw spot and VIX parquet files will be replaced.")
+        self.logger.info("Running in rebuild mode. Existing ingested spot and VIX parquet files will be replaced.")
 
         spot_data = []
         vix_data = []
@@ -116,14 +116,14 @@ class MasterIndexFetcher:
     def _save_partial(self, spot_data, vix_data):
 
         if spot_data:
-            spot_folder = self.config.get_year_raw_dir(self.spot_namespace)
+            spot_folder = self.config.get_year_ingest_dir(self.spot_namespace)
             pd.concat(spot_data, ignore_index=True).to_parquet(
                 spot_folder / "Index_Spot_Prices_partial.parquet",
                 index=False
             )
 
         if vix_data:
-            vix_folder = self.config.get_year_raw_dir(self.vix_namespace)
+            vix_folder = self.config.get_year_ingest_dir(self.vix_namespace)
             pd.concat(vix_data, ignore_index=True).to_parquet(
                 vix_folder / "India_VIX_Historical_partial.parquet",
                 index=False
@@ -131,8 +131,8 @@ class MasterIndexFetcher:
 
     def save_final(self, spot_data, vix_data):
 
-        spot_folder = self.config.get_year_raw_dir(self.spot_namespace)
-        vix_folder = self.config.get_year_raw_dir(self.vix_namespace)
+        spot_folder = self.config.get_year_ingest_dir(self.spot_namespace)
+        vix_folder = self.config.get_year_ingest_dir(self.vix_namespace)
 
         spot_final_path = spot_folder / "Index_Spot_Prices.parquet"
         vix_final_path = vix_folder / "India_VIX_Historical.parquet"

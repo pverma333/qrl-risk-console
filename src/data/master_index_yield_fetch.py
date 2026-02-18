@@ -64,13 +64,13 @@ class MasterIndexYieldFetcher:
         if start_date > end_date:
             raise ValueError("Start date must be before end date.")
         # rebuild
-        base_folder = self.config.get_year_raw_dir(self.namespace)
+        base_folder = self.config.get_year_ingest_dir(self.namespace)
         final_file = base_folder/"Index_Dividend_Yield.parquet"
 
         if final_file.exists():
             final_file.unlink()
 
-        self.logger.info("Running in rebuild mode. Existing raw yield file will be overwritten.")
+        self.logger.info("Running in rebuild mode. Existing ingested yield file will be overwritten.")
 
         self.logger.info(f"Index Yield Fetch started: {start_date} to {end_date}")
         yield_data = []
@@ -94,7 +94,7 @@ class MasterIndexYieldFetcher:
     # Partial Save
     def _save_partial(self, yield_data):
         if yield_data:
-            base_folder = self.config.get_year_raw_dir(self.namespace)
+            base_folder = self.config.get_year_ingest_dir(self.namespace)
             partial_file = base_folder/"Index_Dividend_Yield_partial.parquet"
             pd.concat(yield_data, ignore_index=True).to_parquet(
                 partial_file,
@@ -103,7 +103,7 @@ class MasterIndexYieldFetcher:
     # Final Save
     def _save_final(self, yield_data):
         try:
-            base_folder = self.config.get_year_raw_dir(self.namespace)
+            base_folder = self.config.get_year_ingest_dir(self.namespace)
             final_file = base_folder/"Index_Dividend_Yield.parquet"
             partial_file = base_folder/"Index_Dividend_Yield_partial.parquet"
 
