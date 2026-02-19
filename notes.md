@@ -106,3 +106,51 @@ Pattern 3: Feature Computation as Batch Jobs
 Raw = Data Lake
 Processed = Warehouse
 Curated = Risk Engine Ready
+
+
+
+""""
+assumption - yes right now it only contains one parquet file but it depends on how the daily fetch will work -
+
+1. have a script that fetches all the details daily at eod or start of the day
+2. there will be different paruet files files for daily fetch and after rows are appended in the respective raw data files i will delete these files -
+- derivatives
+- index spot and india vix
+- gov bond 1 year/ 6months/3months
+- index yeild
+
+it appends respective rows from adjacent daily detch file in their respective parquet so for isntance
+daily fetch of 19th feb 2026
+- index spot goes in index_spot_prices.parquet
+- india vix does into india_VIX_historical.parquet
+- bond file goes into gbond_combined.parquet
+- index yeild goes into index_dividend_yeild.parquet
+- derivaties goes and appends into ingest/derivatives/2026/derivatives_2026.parquet file
+
+
+the values should be deduplicated and appended once it is successful the daily fetch will be deleted
+
+now based on this trade calendar should run
+- the moment derivatives folder any file is updated (only append new values)
+- when we run the pipeline in rebuild mode (delete and recreate )
+- when we run indivdual tradeclenaderwriter (delete adn recreate)
+
+
+Daily Fetch → temporary daily files →
+Append into consolidated historical parquet →
+Deduplicate →
+Delete daily temp file →
+Repeat next day.
+
+Derivatives:
+data/ingest/derivatives/2026/derivatives_2026.parquet
+gets appended.
+
+Then TradeCalendar:
+
+• If derivatives updated → append only new trade dates
+• If rebuild → delete + full regenerate
+• If standalone → delete + full regenerate
+
+This is correct layering.
+"""

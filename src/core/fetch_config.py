@@ -6,8 +6,6 @@ from typing import List, Dict, Optional, Tuple, ClassVar
 class FetchConfig:
     base_dir: Path
     use_year_partition: bool = False
-    lot_size_map_csv_name: str = "lot_size_map.csv"
-    lot_size_map_parquet_name: str = "lot_size_map.parquet"
 
     # Derivatives symbols
     derivatives_symbols: List[str] = field(
