@@ -88,26 +88,26 @@ if __name__ == "__main__":
 
 #run script
 """
-python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-18 --rebuild
+python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-20 --rebuild
 python -m scripts.run_data_pipeline --start 2025-12-12 --end 2026-01-12 --rebuild
-python -m scripts.run_data_pipeline --start 2025-12-12 --end 2026-01-09
+python -m scripts.run_data_pipeline --start 2025-12-12 --end 2026-02-20 --rebuild
 
 """
 #run only derivatives
 """
-python -m scripts.run_data_pipeline --start 2024-01-01 --end 2026-02-12 --derivatives-only --rebuild
+python -m scripts.run_data_pipeline --start 2024-01-01 --end 2026-02-20 --derivatives-only --rebuild
 """
 #run index
 """
-python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-12 --index-only
+python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-20 --index-only
 """
 #run index yield only
 """
-python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-12 --index-only
+python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-20 --yield-only
 """
 #run bond only
 """
-python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-17 --bond-only
+python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-20 --bond-only
 """
 #run lot size only
 """
