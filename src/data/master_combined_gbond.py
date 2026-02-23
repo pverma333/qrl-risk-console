@@ -56,6 +56,13 @@ class GbondProcessor:
                 format="%d-%m-%Y",
                 errors="raise"
             )
+            df["change %"] = (
+                df["change %"]
+                .astype(str)
+                .str.replace("%","",regex=False)
+                .str.replace(",", "", regex=False)
+                .astype("float64")
+            )
 
             df["tenor"] = tenor
 
