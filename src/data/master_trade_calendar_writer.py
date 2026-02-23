@@ -36,7 +36,7 @@ class TradeCalendarWriter:
                 self.logger.info("Calendar not found. Running full build.")
                 df_calendar = self._build_full_calendar()
             else:
-                df_calendar = self._append_incremental()
+                df_calendar = self._build_full_calendar()
 
         df_calendar.to_parquet(self.calendar_path, index=False)
 
@@ -61,7 +61,7 @@ class TradeCalendarWriter:
 
         return self._prepare_calendar(combined)
 
-    def _append_incremental(self):
+    def _build_full_calendar(self):
 
         existing = pd.read_parquet(self.calendar_path)
 
