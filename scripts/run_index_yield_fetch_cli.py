@@ -16,12 +16,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start",required=True,help="Start date in YYYY-MM-DD format")
     parser.add_argument("--end",required=True,help="End date in YYYY-MM-DD format")
+    parser.add_argument("--rebuild", action="store_true")
     args = parser.parse_args()
     start_date = parse_date(args.start)
     end_date = parse_date(args.end)
 
     config = FetchConfig(BASE_DIR)
-    fetcher = MasterIndexYieldFetcher(config=config)
+    fetcher = MasterIndexYieldFetcher(config=config,rebuild=args.rebuild)
     fetcher.run(start_date=start_date,end_date=end_date)
 
 if __name__ == "__main__":
@@ -29,6 +30,6 @@ if __name__ == "__main__":
 
 #run script
 """
-python -m scripts.run_index_yield_fetch_cli --start 2019-01-01 --end 2026-02-12
-python -m scripts.run_index_yield_fetch_cli --start 2025-12-01 --end 2026-02-12
+python -m scripts.run_index_yield_fetch_cli --start 2019-01-01 --end 2026-02-23
+python -m scripts.run_index_yield_fetch_cli --start 2026-02-23 --end 2026-02-23
 """

@@ -12,7 +12,7 @@ class MasterIndexFetcher:
         "User-Agent": "Mozilla/5.0"
     }
 
-    def __init__(self, config: FetchConfig, max_retries: int = 3, save_interval: int = 20,delay: float = 0.15):
+    def __init__(self, config: FetchConfig, max_retries: int = 3, save_interval: int = 20,delay: float = 0.15,rebuild: bool = False):
         self.config = config
         self.spot_namespace = "index_spot"
         self.vix_namespace = "vix"
@@ -20,6 +20,7 @@ class MasterIndexFetcher:
         self.max_retries = max_retries
         self.save_interval = save_interval
         self.delay = delay
+        self.rebuild = rebuild
 
         logging.basicConfig(
             filename=self.log_path / "data_pipeline_fetch.log",
@@ -54,10 +55,29 @@ class MasterIndexFetcher:
 
     # Core Runner
     def run(self, start_date: date, end_date: date):
-
         if start_date > end_date:
             raise ValueError("Start date must be before end date.")
-        self.logger.info("Running in rebuild mode. Existing ingested spot and VIX parquet files will be replaced.")
+
+        spot_folder = self.config.get_year_ingest_dir(self.spot_namespace)
+        vix_folder = self.config.get_year_ingest_dir(self.vix_namespace)
+
+        spot_final_path = spot_folder / "Index_Spot_Prices.parquet"
+        vix_final_path = vix_folder / "India_VIX_Historical.parquet"
+        spot_partial_path = spot_folder / "Index_Spot_Prices_partial.parquet"
+        vix_partial_path = vix_folder / "India_VIX_Historical_partial.parquet"
+
+        if self.rebuild:
+            if spot_final_path.exists():
+                spot_final_path.unlink()
+            if vix_final_path.exists():
+                vix_final_path.unlink()
+            if spot_partial_path.exists():
+                spot_partial_path.unlink()
+            if vix_partial_path.exists():
+                vix_partial_path.unlink()
+            self.logger.info("Rebuild mode: deleted existing spot/VIX final + partial files.")
+        else:
+            self.logger.info("Incremental mode: append + upsert (keep='last').")
 
         spot_data = []
         vix_data = []
@@ -136,7 +156,6 @@ class MasterIndexFetcher:
 
         spot_final_path = spot_folder / "Index_Spot_Prices.parquet"
         vix_final_path = vix_folder / "India_VIX_Historical.parquet"
-
         spot_partial_path = spot_folder / "Index_Spot_Prices_partial.parquet"
         vix_partial_path = vix_folder / "India_VIX_Historical_partial.parquet"
 
@@ -146,8 +165,8 @@ class MasterIndexFetcher:
                 new_spot = pd.concat(spot_data,ignore_index = True)
                 if spot_final_path.exists():
                     existing_spot = pd.read_parquet(spot_final_path)
-                    combined_spot = pd.concat([existing_spot,new_spot], ignore_index=True)
-                    combined_spot.drop_duplicates(subset=["Date","Index"],inplace = True)
+                    combined_spot = pd.concat([existing_spot,new_spot],ignore_index=True)
+                    combined_spot.drop_duplicates(subset=["Date","Index"],keep="last",inplace = True)
                 else:
                     combined_spot = new_spot
                 combined_spot.to_parquet(spot_final_path,index=False)
@@ -160,14 +179,14 @@ class MasterIndexFetcher:
                 if vix_final_path.exists():
                     existing_vix = pd.read_parquet(vix_final_path)
                     combined_vix = pd.concat([existing_vix,new_vix], ignore_index=True)
-                    combined_vix.drop_duplicates(subset=["Date"],inplace = True)
+                    combined_vix.drop_duplicates(subset=["Date"],keep="last",inplace = True)
                 else:
                     combined_vix = new_vix
                 combined_vix.to_parquet(vix_final_path,index=False)
                 if not vix_final_path.exists():
                     raise Exception("VIX final file not created.")
 
-            # Delete partial csv after successful final save
+            # Delete partial parquet after successful final save
             if spot_partial_path.exists():
                 spot_partial_path.unlink()
 

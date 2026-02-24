@@ -32,6 +32,6 @@ python -m scripts.run_trade_calendar_cli --rebuild
 """
 #run incremental updates
 """
-python -m scripts.run_trade_calendar
+python -m scripts.run_trade_calendar_cli
 
 """

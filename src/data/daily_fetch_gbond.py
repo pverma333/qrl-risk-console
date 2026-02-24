@@ -30,14 +30,14 @@ class GbondDailyFetch:
         self.logger = logging.getLogger("GbondDailyFetcher")
 
     def _is_trading_day(self):
+        today = pd.Timestamp(datetime.today().date())
         if not self.trade_calendar_path.exists():
             self.logger.warning("Trade calendar not found. Skipping gbond fetch.")
-            return False
+            return False,today
         df_calendar = pd.read_parquet(
             self.trade_calendar_path,
             columns=["trade_date"]
         )
-        today = pd.Timestamp(datetime.today().date())
         is_trading = (df_calendar["trade_date"] == today).any()
         return is_trading, today
 

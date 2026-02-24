@@ -7,7 +7,7 @@ from src.core.fetch_config import FetchConfig
 
 class MasterIndexYieldFetcher:
 
-    def __init__(self,config: FetchConfig,max_retries: int = 3,save_interval: int = 20,delay: float = 0.15):
+    def __init__(self,config: FetchConfig,max_retries: int = 3,save_interval: int = 20,delay: float = 0.15,rebuild: bool = False):
         self.config = config
         self.log_path = config.logs_dir
         self.namespace = "index_yield"
@@ -16,6 +16,7 @@ class MasterIndexYieldFetcher:
         self.max_retries = max_retries
         self.save_interval = save_interval
         self.delay = delay
+        self.rebuild = rebuild
 
         logging.basicConfig(
             filename=self.log_path / "data_pipeline_fetch.log",
@@ -48,6 +49,7 @@ class MasterIndexYieldFetcher:
                     )
                     return None
                 result = df[["DIVYIELD"]].copy()
+                result["DIVYIELD"] = pd.to_numeric(result["DIVYIELD"], errors="coerce")
                 result["DATE"] = target_date.strftime("%Y-%m-%d")
                 result["INDEX"] = index_name
                 self.logger.info(f"Fetched yield for {index_name} on {target_date}")
@@ -65,12 +67,19 @@ class MasterIndexYieldFetcher:
             raise ValueError("Start date must be before end date.")
         # rebuild
         base_folder = self.config.get_year_ingest_dir(self.namespace)
-        final_file = base_folder/"Index_Dividend_Yield.parquet"
+        base_folder.mkdir(parents=True, exist_ok=True)
 
-        if final_file.exists():
-            final_file.unlink()
+        final_file = base_folder / "Index_Dividend_Yield.parquet"
+        partial_file = base_folder / "Index_Dividend_Yield_partial.parquet"
 
-        self.logger.info("Running in rebuild mode. Existing ingested yield file will be overwritten.")
+        if self.rebuild:
+            if final_file.exists():
+                final_file.unlink()
+            if partial_file.exists():
+                partial_file.unlink()
+            self.logger.info("Rebuild mode: existing yield files deleted. Rebuilding from scratch.")
+        else:
+            self.logger.info("Incremental mode: appending + deduplicating (DATE, INDEX) with keep='last'.")
 
         self.logger.info(f"Index Yield Fetch started: {start_date} to {end_date}")
         yield_data = []
@@ -100,6 +109,7 @@ class MasterIndexYieldFetcher:
                 partial_file,
                 index=False
             )
+
     # Final Save
     def _save_final(self, yield_data):
         try:
@@ -109,12 +119,15 @@ class MasterIndexYieldFetcher:
 
             if yield_data:
                 new_data = pd.concat(yield_data, ignore_index=True)
+                new_data["DIVYIELD"] = pd.to_numeric(new_data["DIVYIELD"], errors="coerce")
                 if final_file.exists():
                     existing = pd.read_parquet(final_file)
+                    existing["DIVYIELD"] = pd.to_numeric(existing["DIVYIELD"], errors="coerce")
                     combined = pd.concat([existing, new_data], ignore_index=True)
-                    combined.drop_duplicates(subset=["DATE", "INDEX"], inplace=True)
+                    combined.drop_duplicates(subset=["DATE", "INDEX"],keep ="last" ,inplace=True)
                 else:
-                    combined = new_data
+                    combined = new_data.drop_duplicates(subset=["DATE", "INDEX"],keep="last").copy()
+                combined["DIVYIELD"] = pd.to_numeric(combined["DIVYIELD"], errors="coerce")
                 combined.to_parquet(final_file, index=False)
             if not final_file.exists():
                 raise Exception("Final file not created.")
