@@ -57,35 +57,9 @@ class TradeCalendarWriter:
         if not dfs:
             raise ValueError("No derivatives parquet files found.")
 
-        combined = pd.concat(dfs, ignore_index=True)
-
-        return self._prepare_calendar(combined)
-
-    def _build_full_calendar(self):
-
-        existing = pd.read_parquet(self.calendar_path)
-
-        dfs = []
-
-        for year_dir in sorted(self.derivatives_base.iterdir()):
-            if year_dir.is_dir():
-                for file in year_dir.glob("*.parquet"):
-                    df = pd.read_parquet(file, columns=["TIMESTAMP", "SYMBOL"])
-                    dfs.append(df)
-
         combined_derivatives = pd.concat(dfs, ignore_index=True)
 
-        new_calendar = self._prepare_calendar(combined_derivatives)
-
-        combined = (
-            pd.concat([existing, new_calendar], ignore_index=True)
-            .drop_duplicates()
-            .sort_values(["trade_date", "symbol"])
-            .reset_index(drop=True)
-        )
-
-        return combined
-
+        return self._prepare_calendar(combined_derivatives)
     def _prepare_calendar(self, df):
 
         df["trade_date"] = pd.to_datetime(df["TIMESTAMP"]).dt.normalize()
