@@ -26,11 +26,11 @@ def main():
     calendar_writer.run()
 
     # Index Price
-    index_fetcher = MasterIndexFetcher(config=config)
+    index_fetcher = MasterIndexFetcher(config=config,rebuild=False)
     index_fetcher.run(start_date=today, end_date=today)
 
     # Index Yield
-    yield_fetcher = MasterIndexYieldFetcher(config=config)
+    yield_fetcher = MasterIndexYieldFetcher(config=config,rebuild=False)
     yield_fetcher.run(start_date=today, end_date=today)
 
     # Gbond
