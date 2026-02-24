@@ -18,12 +18,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", required=True, help="Start date in YYYY-MM-DD format")
     parser.add_argument("--end", required=True, help="End date in YYYY-MM-DD format")
+    parser.add_argument("--rebuild", action="store_true")
 
     args = parser.parse_args()
 
     config = FetchConfig(BASE_DIR)
 
-    fetcher = MasterIndexFetcher(config=config)
+    fetcher = MasterIndexFetcher(config=config,rebuild=args.rebuild)
 
     fetcher.run(
         start_date=parse_date(args.start),
