@@ -68,12 +68,12 @@ def main():
 
     # Index Price
     if run_all or args.index_only:
-        index_fetcher = MasterIndexFetcher(config=config)
+        index_fetcher = MasterIndexFetcher(config=config,rebuild=args.rebuild)
         index_fetcher.run(start_date=start_date,end_date=end_date)
 
     # Index Yield
     if run_all or args.yield_only:
-        yield_fetcher = MasterIndexYieldFetcher(config=config)
+        yield_fetcher = MasterIndexYieldFetcher(config=config,rebuild=args.rebuild)
         yield_fetcher.run(start_date=start_date,end_date=end_date)
 
     # Gbond Combine
@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
 #run script
 """
-python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-20 --rebuild
+python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-23 --rebuild
 python -m scripts.run_data_pipeline --start 2025-12-12 --end 2026-01-12 --rebuild
 python -m scripts.run_data_pipeline --start 2025-12-12 --end 2026-02-20 --rebuild
 
