@@ -30,6 +30,7 @@ class GbondDailyFetch:
         self.logger = logging.getLogger("GbondDailyFetcher")
 
     def _is_trading_day(self):
+        #today = pd.Timestamp("2026-02-26") --> date input
         today = pd.Timestamp(datetime.today().date())
         if not self.trade_calendar_path.exists():
             self.logger.warning("Trade calendar not found. Skipping gbond fetch.")
@@ -44,6 +45,7 @@ class GbondDailyFetch:
     def run(self):
         is_trading, today = self._is_trading_day()
         if not is_trading:
+            #self.logger.info(f"{today} is not a trading day. Skipping gbond fetch.") -- single day fetch
             self.logger.info(f"{today.date()} is not a trading day. Skipping gbond fetch.")
             return None
         self.ingest_dir.mkdir(parents=True, exist_ok=True)
@@ -78,6 +80,7 @@ class GbondDailyFetch:
         response.raise_for_status()
         data = response.json()
         rows = []
+        #today = pd.Timestamp("2026-02-26") -- date input
         today = pd.Timestamp(datetime.today().date())
         for item in data.get("data", []):
             d = item.get("d", [])
