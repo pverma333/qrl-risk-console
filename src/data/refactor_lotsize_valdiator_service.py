@@ -40,6 +40,7 @@ class LotSizeMapValidator:
 class LotSizeService:
 
     def __init__(self, df_map):
+        LotSizeMapValidator().validate(df_map)
         self.df_map = df_map
 
     def get_lot_size(self, trade_date, symbol):
