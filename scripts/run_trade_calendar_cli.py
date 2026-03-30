@@ -14,14 +14,12 @@ def main():
     args = parser.parse_args()
 
     config = FetchConfig(BASE_DIR)
-
     writer = TradeCalendarWriter(
         config=config,
         rebuild=args.rebuild
     )
 
     writer.run()
-
 
 if __name__ == "__main__":
     main()

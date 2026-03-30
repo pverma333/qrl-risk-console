@@ -158,3 +158,62 @@ This is correct layering.
 
 
 gov bond daily fetch run this on terminal --> pip install git+https://github.com/rongardF/tvdatafeed.git pandas
+
+
+result of audit_derivatives.py
+
+INFO | src.db.ingest_registry | Registered view: v_lotsize → data/ingest/LotSize
+INFO | src.db.ingest_registry | Registered view: v_tradecalendar → data/ingest/TradeCalendar
+INFO | src.db.ingest_registry | Registered view: v_derivatives → data/ingest/derivatives
+INFO | src.db.ingest_registry | Registered view: v_gbond → data/ingest/gbond
+INFO | src.db.ingest_registry | Registered view: v_index_spot → data/ingest/index_spot
+INFO | src.db.ingest_registry | Registered view: v_index_yield → data/ingest/index_yield
+INFO | src.db.ingest_registry | Registered view: v_vix → data/ingest/vix
+INFO | src.db.ingest_registry | Total views registered: 7
+
+--- 1. SCHEMA ---
+INFO | numexpr.utils | Note: NumExpr detected 10 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 8.
+INFO | numexpr.utils | NumExpr defaulting to 8 threads.
+   column_name column_type null   key default extra
+0   INSTRUMENT     VARCHAR  YES  None    None  None
+1       SYMBOL     VARCHAR  YES  None    None  None
+2    EXPIRY_DT     VARCHAR  YES  None    None  None
+3    STRIKE_PR      DOUBLE  YES  None    None  None
+4   OPTION_TYP     VARCHAR  YES  None    None  None
+5         OPEN      DOUBLE  YES  None    None  None
+6         HIGH      DOUBLE  YES  None    None  None
+7          LOW      DOUBLE  YES  None    None  None
+8        CLOSE      DOUBLE  YES  None    None  None
+9    SETTLE_PR      DOUBLE  YES  None    None  None
+10   CONTRACTS      DOUBLE  YES  None    None  None
+11    OPEN_INT      DOUBLE  YES  None    None  None
+12   CHG_IN_OI      DOUBLE  YES  None    None  None
+13   TIMESTAMP     VARCHAR  YES  None    None  None
+
+--- 2. NULL COUNTS ---
+   total_rows  null_close  null_settle  null_expiry  null_strike  null_option_type
+0     8949004           0            0            0            0              4956
+
+--- 3. ZERO VALUE COUNTS ---
+   zero_close  zero_settle  zero_strike
+0           0       161176        20712
+
+--- 4. SYMBOL DISTRIBUTION ---
+       SYMBOL  row_count
+0       NIFTY    3750005
+1   BANKNIFTY    2639914
+2    FINNIFTY    1405555
+3  MIDCPNIFTY    1153530
+
+--- 5. OPTION TYPE DISTRIBUTION ---
+  OPTION_TYP  row_count
+0       None       4956
+1         PE    4488068
+2         CE    4440224
+3         XX      15756
+
+
+## Index Yield - Nifty bank was 0 from March 2021 till july 2021 because
+Throughout the March–July 2021 period, Nifty Bank price data remained fully available due to standard trading, but RBI-mandated dividend restrictions effectively zeroed out reported yields, while P/E ratios were only intermittently published based on the volatility of constituent bank earnings.
+
+## Gbond value - mixed for May 2021 as percentage and price --> logic is if value > 15 then it is recalulated as price otherwise copied as it is. Logic being indian gbond has never crossed 15%

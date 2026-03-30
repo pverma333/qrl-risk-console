@@ -69,11 +69,42 @@ class FetchConfig:
         ],
     }
 
+    DEFAULT_STRIKE_INTERVALS: ClassVar[Dict[str, List[Tuple[str, Optional[str], int]]]] = {
+    "NIFTY": [("2019-01-01", None, 50),],
+    "BANKNIFTY": [("2019-01-01", None, 100),],
+    "FINNIFTY": [("2021-01-11", "2022-10-18", 100),("2022-10-19", None, 50),],
+    "MIDCPNIFTY": [("2022-01-24", "2022-12-31", 50),("2023-01-01", None, 25),],
+    }
+
+    SYMBOL_NORMALISATION_MAP: ClassVar[Dict[str, str]] = {
+    # internal names
+    "NIFTY": "NIFTY",
+    "BANKNIFTY": "BANKNIFTY",
+    "FINNIFTY": "FINNIFTY",
+    "MIDCPNIFTY": "MIDCPNIFTY",
+    # index_names variants
+    "Nifty 50": "NIFTY",
+    "Nifty Bank": "BANKNIFTY",
+    "Nifty Financial Services": "FINNIFTY",
+    "Nifty Fin Service": "FINNIFTY",
+    "Nifty Midcap Select": "MIDCPNIFTY",
+    # yield_names variants
+    "NIFTY BANK": "BANKNIFTY",
+    "NIFTY FIN SERVICE": "FINNIFTY",
+    "NIFTY MID SELECT": "MIDCPNIFTY",
+    }
+
+    KNOWN_SYMBOLS: ClassVar[frozenset] = frozenset({
+    "NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"
+    })
+
     def __post_init__(self):
         self.data_dir = self.base_dir / "data"
         self.ingest_dir = self.data_dir / "ingest"
         self.processed_dir = self.data_dir / "processed"
+        self.curated_dir = self.data_dir / "curated"
         self.logs_dir = self.base_dir / "logs"
+        self.duckdb_path = self.data_dir/"quant_risk.db"
         self._create_base_dirs()
 
     def _create_base_dirs(self):

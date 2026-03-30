@@ -11,31 +11,36 @@ from src.data.master_index_fetch import MasterIndexFetcher
 from src.data.master_index_yield_fetch import MasterIndexYieldFetcher
 from src.data.master_trade_calendar_writer import TradeCalendarWriter
 from src.data.daily_fetch_gbond import GbondDailyFetch
+from src.data.processed_trade_calendar_builder import ProcessedTradeCalendarBuilder
+from src.data.processed_lot_size_builder import ProcessedLotSizeBuilder
+from src.data.processed_derivatives_builder import ProcessedDerivativesBuilder
+from src.data.processed_index_spot_builder import ProcessedIndexSpotBuilder
+from src.data.processed_vix_builder import ProcessedVIXBuilder
+from src.data.processed_index_yield_builder import ProcessedIndexYieldBuilder
+from src.data.processed_gbond_builder import ProcessedGBondBuilder
 
 def main():
 
+
+    #today = datetime(2026, 3, 29).date()
     today = datetime.today().date()
     config = FetchConfig(BASE_DIR, use_year_partition=True)
 
-    # Derivatives
-    derivatives_fetcher = DerivativesFetcher(config=config, rebuild=False)
-    derivatives_fetcher.run(start_date=today, end_date=today)
+    # Ingest Layer
+    DerivativesFetcher(config=config, rebuild=False).run(start_date=today, end_date=today)
+    TradeCalendarWriter(config=config, rebuild=False).run()
+    MasterIndexFetcher(config=config, rebuild=False).run(start_date=today, end_date=today)
+    MasterIndexYieldFetcher(config=config, rebuild=False).run(start_date=today, end_date=today)
+    GbondDailyFetch(config=config).run()
 
-    # Trade Calendar
-    calendar_writer = TradeCalendarWriter(config=config, rebuild=False)
-    calendar_writer.run()
-
-    # Index Price
-    index_fetcher = MasterIndexFetcher(config=config,rebuild=False)
-    index_fetcher.run(start_date=today, end_date=today)
-
-    # Index Yield
-    yield_fetcher = MasterIndexYieldFetcher(config=config,rebuild=False)
-    yield_fetcher.run(start_date=today, end_date=today)
-
-    # Gbond
-    gbond_fetcher = GbondDailyFetch(config=config)
-    gbond_fetcher.run()
+    # Processed Layer
+    ProcessedTradeCalendarBuilder(config).run("incremental")
+    ProcessedLotSizeBuilder(config).run("incremental")
+    ProcessedDerivativesBuilder(config).run("incremental")
+    ProcessedIndexSpotBuilder(config).run("incremental")
+    ProcessedVIXBuilder(config).run("incremental")
+    ProcessedIndexYieldBuilder(config).run("incremental")
+    ProcessedGBondBuilder(config).run("incremental")
 
 if __name__ == "__main__":
     main()
