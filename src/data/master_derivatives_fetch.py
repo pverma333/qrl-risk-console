@@ -98,12 +98,17 @@ class DerivativesFetcher:
         df = pd.read_csv(file_path)
 
         mapping = {
-            'TradDt': 'TIMESTAMP', 'BizDt': 'TIMESTAMP',
+            'TradDt': 'TIMESTAMP',
+            'BizDt': 'TIMESTAMP',
             'InstrmntType': 'INSTRUMENT',
-            'Symbl': 'SYMBOL', 'XpryDt': 'EXPIRY_DT',
-            'StrkPric': 'STRIKE_PR', 'OptnTyp': 'OPTION_TYP',
-            'OpnPric': 'OPEN', 'HghPric': 'HIGH',
-            'LwPric': 'LOW', 'ClsPric': 'CLOSE',
+            'Symbl': 'SYMBOL',
+            'XpryDt': 'EXPIRY_DT',
+            'StrkPric': 'STRIKE_PR',
+            'OptnTyp': 'OPTION_TYP',
+            'OpnPric': 'OPEN',
+            'HghPric': 'HIGH',
+            'LwPric': 'LOW',
+            'ClsPric': 'CLOSE',
             'SttlmPric': 'SETTLE_PR',
             'TtlTradgVol': 'CONTRACTS',
             'OpnIntrst': 'OPEN_INT',
@@ -165,7 +170,7 @@ class DerivativesFetcher:
                 self._yearly_unknown_symbols[year] = set()
             self._yearly_unknown_symbols[year].update(unknown_symbols)
 
-        # Filter universe
+        # Filter data
         df = df[df["SYMBOL"].isin(allowed)].copy()
 
         df["STRIKE_PR"] = pd.to_numeric(df["STRIKE_PR"], errors="coerce").fillna(0)
@@ -211,7 +216,7 @@ class DerivativesFetcher:
                 )
                 del self._yearly_unknown_symbols[year]
 
-            # Clean daily ingested files
+            # Clean daily files
             for file in year_folder.iterdir():
                 if file.suffix == ".csv":
                     file.unlink()
