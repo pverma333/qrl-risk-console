@@ -217,3 +217,45 @@ INFO | numexpr.utils | NumExpr defaulting to 8 threads.
 Throughout the March–July 2021 period, Nifty Bank price data remained fully available due to standard trading, but RBI-mandated dividend restrictions effectively zeroed out reported yields, while P/E ratios were only intermittently published based on the volatility of constituent bank earnings.
 
 ## Gbond value - mixed for May 2021 as percentage and price --> logic is if value > 15 then it is recalulated as price otherwise copied as it is. Logic being indian gbond has never crossed 15%
+
+## Yield Interpolation - Linear Interpolation
+dte < 91   → use 3m rate directly
+91 ≤ dte < 182  → interpolate between 3m and 6m
+182 ≤ dte < 365 → interpolate between 6m and 1y
+dte ≥ 365  → use 1y rate directly
+
+### Why?
+**Choice: Linear Interpolation**
+
+**Why not Cubic Spline:**
+Cubic spline earns its value when you have 5+ tenor points spread across a full curve. With only 3 points (3M, 6M, 1Y), a spline reduces to nearly the same result as a straight line. Added complexity, negligible gain.
+
+**Why not Nelson-Siegel:**
+Nelson-Siegel is a parametric model designed to capture level, slope, and curvature of a full yield curve. It requires non-linear fitting and becomes unstable with fewer than 4-5 tenor points. Applying it to 3 points is statistically under-determined — it would overfit noise, not capture structure.
+
+**Why Linear is correct here:**
+Three tenors clustered at the short end (3M to 1Y). Most Indian index option expiries fall below 91 days — meaning the interpolation almost always operates on a single short segment. The rate difference across this segment is typically under 15 basis points. A straight line through that range introduces negligible pricing error.
+
+**Upgrade path:**
+If 2Y, 5Y, 10Y bond data is added later, swap to cubic spline in one function change. The `TenorRates` dataclass and `interpolate_rate` interface are designed to accommodate this without touching the BS engine.
+
+**Auditability:**
+The dashboard assumption panel will display interpolation method as linear so any reviewer knows the exact convention used.
+
+--> Formula
+r = r_low + (dte - dte_low) / (dte_high - dte_low) * (r_high - r_low)
+
+--> Example
+  trade_date tenor  yield_pct
+0 2024-10-15    1y      6.566
+1 2024-10-15    3m      6.440
+2 2024-10-15    6m      6.560
+
+below 91 → use 3m directly → r = 6.440
+
+if dte = 120
+between 91 and 182 → interpolate 3m and 6m
+r = 6.440 + (120 - 91) / (182 - 91) * (6.560 - 6.440)
+r = 6.440 + (29/91) * 0.120
+r = 6.440 + 0.038
+r = 6.478
