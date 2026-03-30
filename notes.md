@@ -259,3 +259,157 @@ r = 6.440 + (120 - 91) / (182 - 91) * (6.560 - 6.440)
 r = 6.440 + (29/91) * 0.120
 r = 6.440 + 0.038
 r = 6.478
+
+
+# Black-Scholes Engine — Logic Notes
+## src/quant/black_scholes.py
+
+---
+
+## What Black-Scholes Solves
+
+Given observable market inputs, BS computes a theoretical option price.
+IV inversion reverses this — given the market price, find the volatility
+that makes BS produce that price.
+
+---
+
+## Inputs (BSMInputs)
+
+| Field | Symbol | Source |
+|---|---|---|
+| spot | S | processed index spot |
+| strike | K | processed options |
+| dte | — | computed in processed layer |
+| rate | r | yield interpolation engine (decimal) |
+| div_yield | q | processed index yield (decimal) |
+| option_type | — | CE or PE |
+
+Market price (settle) passed separately — not part of BSMInputs
+because inputs define the contract, price defines the observation.
+
+---
+
+## Core Formula
+```
+T  = dte / 365
+
+d1 = [ln(S/K) + (r - q + 0.5σ²)T] / (σ√T)
+d2 = d1 - σ√T
+
+Call = S·e^(-qT)·N(d1) - K·e^(-rT)·N(d2)
+Put  = K·e^(-rT)·N(-d2) - S·e^(-qT)·N(-d1)
+```
+
+N() = cumulative standard normal distribution
+Implemented via math.erf() — no scipy dependency.
+
+---
+
+## IV Inversion — Brent's Method
+
+Brent's method is a bracketed root-finding algorithm.
+
+**Intuition:** You know the market price. You know BS produces a price
+for any given σ. You want the σ where BS price = market price.
+Define: objective(σ) = BS_price(σ) - market_price
+You need to find σ where objective(σ) = 0.
+
+**How bracketing works:**
+1. Set low = 1% vol, high = 500% vol
+2. Compute objective(low) and objective(high)
+3. If both have the same sign → no root exists in this interval → return None
+4. If opposite signs → a root exists somewhere between low and high
+5. Bisect the interval, evaluate midpoint, narrow the bracket toward the root
+6. Stop when |objective(mid)| < 1e-6 or interval width < 1e-6
+
+**Why Brent's over Newton-Raphson:**
+Newton-Raphson requires the derivative (vega) at each step and can
+diverge if the initial guess is poor. Brent's is guaranteed to converge
+within the bracket — no divergence possible. Industry standard for IV
+inversion.
+
+**Convergence:** Typically under 20 iterations for clean inputs.
+Max iterations capped at 100 as a safety ceiling.
+
+---
+
+## Greeks
+
+All Greeks are analytical — computed directly from d1, d2, not numerical
+differentiation.
+
+| Greek | Formula | Convention |
+|---|---|---|
+| Delta | ∂Price/∂S | raw — e.g. 0.52 means 52% of spot move |
+| Gamma | ∂²Price/∂S² | raw — rate of change of delta per 1 point spot move |
+| Vega | ∂Price/∂σ | divided by 100 — price change per 1% vol move |
+| Theta | ∂Price/∂T | divided by 365 — price decay per calendar day |
+| Rho | ∂Price/∂r | divided by 100 — price change per 1% rate move |
+
+Gamma and Vega are identical for calls and puts (same formula).
+Delta, Theta, Rho differ by sign and formula between CE and PE.
+
+Put delta is always negative (between -1 and 0).
+Call delta is always positive (between 0 and 1).
+
+---
+
+## Input Guards — What Gets Rejected
+
+| Condition | Reason |
+|---|---|
+| dte <= 0 | T=0 causes division by zero in d1/d2 |
+| market_price <= 0 | Cannot invert zero price — any σ produces price > 0 |
+| spot <= 0 | log(S/K) undefined |
+| strike <= 0 | log(S/K) undefined |
+| option_type not CE/PE | Unknown instrument — futures rows or bad data |
+| market_price < intrinsic | Violates no-arbitrage — NSE settle occasionally produces these for illiquid strikes |
+| f_low * f_high > 0 | No root in [1%, 500%] bracket — IV does not exist for this price |
+
+All rejections return BSMResult with all fields as None.
+Downstream curated layer handles None rows by excluding from analytics.
+
+---
+
+## What Black-Scholes Does NOT Handle
+
+- American options (early exercise) — NSE index options are European, so BS is correct
+- Discrete dividends — continuous dividend yield q is used, standard for index options
+- Stochastic volatility — BS assumes constant vol (vol smile exists in reality, IV surface captures this empirically)
+- Jump processes — BS assumes continuous price paths
+
+---
+
+## Why Options Only — Not Futures
+
+Futures have linear payoff — no optionality. Priced via Cost of Carry:
+```
+F = S × e^((r - q) × T)
+```
+
+No volatility, no inversion, no BS needed.
+Futures Greeks: Delta ≈ 1, Gamma = 0, Vega = 0.
+Separate futures_pricing.py module handles basis and futures delta later.
+
+---
+
+## Scaling Conventions (Industry Standard)
+
+- Vega: per 1% move in vol (divide raw vega by 100)
+- Theta: per calendar day (divide raw theta by 365)
+- Rho: per 1% move in rate (divide raw rho by 100)
+
+These match what you will see on any institutional risk report or
+FRM exam question on Greeks.
+
+---
+
+## IV Bounds
+
+| Bound | Value | Reason |
+|---|---|---|
+| Lower | 1% | Below this d1/d2 numerically unstable. India VIX never below ~10% historically |
+| Upper | 500% | Above this no rational pricing exists. VIX peaked ~85% in COVID crash |
+| Tolerance | 1e-6 | Price match to 0.000001 rupees — effectively zero error |
+| Max iterations | 100 | Safety ceiling. Brent's converges in <20 for clean inputs |

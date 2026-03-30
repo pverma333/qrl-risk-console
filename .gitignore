@@ -25,3 +25,10 @@ artifacts
 logs
 data/quant_risk.db
 .claude/worktrees/
+.coverage
+htmlcov/
+.pytest_cache/
+
+#docs
+notes.md
+quant_notes.md
