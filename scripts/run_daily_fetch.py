@@ -1,9 +1,11 @@
 import sys
+import logging
 from datetime import datetime
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
+logging.getLogger("numexpr").setLevel(logging.WARNING)
 
 from src.core.fetch_config import FetchConfig
 from src.data.master_derivatives_fetch import DerivativesFetcher
@@ -18,11 +20,12 @@ from src.data.processed_index_spot_builder import ProcessedIndexSpotBuilder
 from src.data.processed_vix_builder import ProcessedVIXBuilder
 from src.data.processed_index_yield_builder import ProcessedIndexYieldBuilder
 from src.data.processed_gbond_builder import ProcessedGBondBuilder
+from src.data.curated_option_chain_builder import CuratedOptionChainBuilder
 
 def main():
 
 
-    #today = datetime(2026, 3, 29).date()
+    #today = datetime(2026, 3, 30).date()
     today = datetime.today().date()
     config = FetchConfig(BASE_DIR, use_year_partition=True)
 
@@ -41,6 +44,9 @@ def main():
     ProcessedVIXBuilder(config).run("incremental")
     ProcessedIndexYieldBuilder(config).run("incremental")
     ProcessedGBondBuilder(config).run("incremental")
+
+    # Curated Layer
+    CuratedOptionChainBuilder(config).run("incremental")
 
 if __name__ == "__main__":
     main()

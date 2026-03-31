@@ -31,5 +31,5 @@ if __name__ == "__main__":
 #run script
 """
 python -m scripts.run_index_yield_fetch_cli --start 2019-01-01 --end 2026-02-23
-python -m scripts.run_index_yield_fetch_cli --start 2026-02-23 --end 2026-02-23
+python -m scripts.run_index_yield_fetch_cli --start 2026-03-30 --end 2026-03-30
 """
