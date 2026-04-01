@@ -164,11 +164,16 @@ class CuratedOptionChainBuilder:
 
         if mode == "incremental" and out_path.exists():
             existing = pd.read_parquet(out_path)
+            existing = existing.copy()
             existing["trade_date"] = pd.to_datetime(existing["trade_date"]).dt.date
+            existing["expiry_date"] = pd.to_datetime(existing["expiry_date"]).dt.date
+            df = df.copy()
             df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
+            df["expiry_date"] = pd.to_datetime(df["expiry_date"]).dt.date
             combined = pd.concat([existing, df], ignore_index=True)
             df = self._deduplicate(combined)
 
+        df = df.copy()
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
         df["expiry_date"] = pd.to_datetime(df["expiry_date"]).dt.date
 

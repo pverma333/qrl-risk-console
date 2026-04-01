@@ -28,7 +28,21 @@ data/quant_risk.db
 .coverage
 htmlcov/
 .pytest_cache/
-
 #docs
 notes.md
 quant_notes.md
+
+#coverage run script
+"""
+# run and measure
+coverage run -m pytest tests/
+
+# show report
+coverage report --include="src/quant/*,src/data/*" -m
+"""
+""
+#single line coverage test
+coverage run -m pytest tests/
+coverage report --include="src/quant/*,src/data/*"
+
+""
