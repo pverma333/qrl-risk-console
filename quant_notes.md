@@ -740,3 +740,159 @@ Response Structure:
   PortfolioSummary
     total_mtm_pnl, total_scenario_pnl, total_pnl
     net_delta, net_gamma, net_vega, net_theta, net_rho
+
+
+### Black Scholes functioning - GBM(Monte Carlo) vs Historical Var
+## Geometric Brownian Motion (GBM)
+
+---
+
+### What It Is
+
+GBM is a mathematical model that describes how an asset price evolves over time. It is the foundation of Black-Scholes and almost all classical options pricing theory.
+
+The model says asset prices follow this stochastic differential equation:
+
+```
+dS = μS dt + σS dW
+```
+
+Where:
+- `S`  = current asset price
+- `dS` = infinitesimal change in price
+- `μ`  = drift — expected return per unit time
+- `σ`  = volatility — standard deviation of returns per unit time
+- `dt` = infinitesimal time step
+- `dW` = Wiener process increment — pure randomness drawn from N(0, dt)
+
+---
+
+### Layman Analogy
+
+Imagine a drunk person walking along a road that slopes uphill slightly. The uphill slope is the drift — a consistent directional tendency. But at each step the person staggers randomly left or right by an unpredictable amount. GBM says asset prices behave exactly like this — a consistent drift upward (long-run equity premium) combined with random shocks at each step.
+
+The key insight is that the randomness is proportional to the current price. A 1% move on NIFTY at 20,000 is 200 points. The same 1% move at 25,000 is 250 points. This is why it is called geometric — the shocks scale with the level of the asset.
+
+---
+
+### Discrete Form — What Monte Carlo Actually Simulates
+
+The continuous equation above cannot be simulated directly. In practice it is discretized:
+
+```
+S_{t+1} = S_t * exp((μ - 0.5σ²) * Δt + σ * √Δt * Z)
+
+Where:
+Z ~ N(0,1)     ← random draw from standard normal
+Δt = 1/252     ← one trading day
+μ              ← assumed drift (often set to risk-free rate under risk-neutral measure)
+σ              ← historical or implied volatility
+```
+
+Monte Carlo runs this equation 10,000 times from today's spot, each time with different random draws of Z, producing 10,000 possible price paths. Each path reprices your portfolio. The distribution of those 10,000 PnL outcomes gives you VaR.
+
+---
+
+### Three Core Assumptions GBM Makes
+
+**1. Returns are log-normally distributed**
+```
+log(S_t / S_0) ~ N((μ - 0.5σ²)T, σ²T)
+```
+This means prices cannot go negative — mathematically correct. But it also means the model produces thin tails — rare extreme events are assigned lower probability than actually observed in markets.
+
+**2. Volatility is constant**
+`σ` does not change over time. This is directly contradicted by the IV smile your own engine computes. The smile exists precisely because the market assigns higher implied vol to OTM options — a fat tail premium that GBM cannot explain.
+
+**3. Returns are independent across time**
+Yesterday's return has no influence on today's return. In reality, volatility clusters — high volatility days tend to follow high volatility days. GBM ignores this.
+
+---
+
+### Why Black-Scholes Uses GBM
+
+Black-Scholes is derived by assuming the underlying follows GBM and then constructing a risk-free hedge portfolio (delta hedge). Under GBM, the hedge is perfect and continuous, and the resulting PDE has a closed-form solution — the BS formula.
+
+This is why BS is so elegant mathematically but imperfect in practice. The moment you observe an IV smile, you are looking at evidence that GBM is wrong — the market is pricing in fat tails and skew that GBM cannot produce.
+
+---
+
+### GBM vs What You Use
+
+| | GBM (Monte Carlo) | Historical Simulation |
+|---|---|---|
+| Return distribution | Assumed normal | Actual observed |
+| Fat tails | Underestimated | Captured naturally |
+| Vol smile | Cannot capture | Implicit via BS reprice |
+| Volatility | Constant | Varies day to day |
+| Computation | Heavy (10K+ paths) | Light (252 scenarios) |
+| Model risk | High — wrong σ → wrong VaR | Low — no distributional assumption |
+| Regulatory acceptance | Accepted with caveats | Preferred (Basel III) |
+
+---
+
+### Connection to Your Project
+
+Your BS engine assumes GBM implicitly — the Black-Scholes formula is derived from it. But your VaR engine will not use GBM for simulation. Instead it will take 252 actual daily spot returns from `v_processed_index_spot` and use those as the shock scenarios. This sidesteps all three GBM assumptions entirely — you are not assuming a distribution, you are using what actually happened.
+
+The result is a VaR number that is defensible, reproducible, and consistent with how your data pipeline works.
+
+---
+
+### Var/Cvar working
+
+Purpose: Pure math module. Pulls historical spot returns from processed layer. Applies each return as a spot shock to the current portfolio. Builds PnL distribution. Computes VaR and CVaR at 95% and 99%. No file IO beyond DuckDB read. No pandas in the core math functions.2. Math IntuitionStep 1 — Historical returns:
+r_t = (S_t - S_{t-1}) / S_{t-1}
+252 returns = 252 historical scenarios.Step 2 — Apply each return as spot shock:
+For each r_t:
+    spot_shocked = current_spot * (1 + r_t)
+    spot_shock_pct = r_t * 100Step 3 — Portfolio PnL under each scenario:
+For each scenario:
+    shock = Shock(spot_shock_pct=r_t*100, vol_shock_abs=0, rate_shock_bps=0)
+    PnL_t = sum of scenario_pnl across all positionsVol and rate held constant — spot-only VaR first. This is the standard first iteration at any desk.Step 4 — VaR and CVaR:
+Sort PnL_distribution ascending (worst to best)
+
+VaR(95%) = -percentile(PnL, 5%)    ← loss at 95% confidence
+VaR(99%) = -percentile(PnL, 1%)    ← loss at 99% confidence
+
+CVaR(95%) = -mean(PnL where PnL < -VaR(95%))
+CVaR(99%) = -mean(PnL where PnL < -VaR(99%))VaR and CVaR are reported as positive numbers representing loss magnitude. A VaR of 50,000 means "with 95% confidence, you will not lose more than 50,000 in one day."Layman analogy: sort your 252 worst days of the year. VaR(95%) is the 13th worst day. CVaR(95%) is the average of the 12 days worse than that. CVaR tells you what happens in the tail beyond VaR.
+
+VaR Engine
+==========
+
+Method: Historical Simulation
+Rationale: No distributional assumption. Captures fat tails,
+skew, and volatility clustering from actual market history.
+Industry standard for options books (Basel III compliant).
+
+Return Computation:
+  r_t = (S_t - S_{t-1}) / S_{t-1}  ← arithmetic return
+  Arithmetic (not log) — consistent with scenario engine shock convention.
+
+Shock Applied Per Scenario:
+  spot_shock_pct = r_t * 100
+  vol_shock_abs  = 0.0   ← spot-only VaR, first iteration
+  rate_shock_bps = 0.0   ← spot-only VaR, first iteration
+
+VaR Sign Convention:
+  VaR reported as positive loss magnitude.
+  VaR(95%) = -percentile(PnL, 5%)
+  VaR(99%) = -percentile(PnL, 1%)
+
+CVaR (Expected Shortfall):
+  Average loss in scenarios beyond VaR threshold.
+  CVaR(95%) = -mean(PnL where PnL < -VaR(95%))
+  CVaR always >= VaR by construction.
+
+Lookback Window:
+  Default 252 trading days = 1 calendar year of EOD data.
+  Configurable. Uses whatever history is available if less than lookback.
+
+Reuses:
+  run_portfolio() from portfolio.py — no duplicated repricing logic.
+  scenario_engine.py called once per historical scenario per position.
+
+Performance:
+  252 scenarios * N positions * 1 BS reprice each.
+  Acceptable for EOD web request. Not suitable for real-time.
