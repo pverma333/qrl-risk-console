@@ -311,3 +311,432 @@ These tests verify the mathematical building block underlying all BS calculation
 **All fields null when any guard fires** — If any input guard rejects the computation, every output field must be null — not a mix of some nulls and some computed values. A partial result (e.g. delta computed but IV null) would corrupt any downstream aggregation that sums Greeks across a portfolio.
 
 **All fields non-null for valid input** — The mirror test. A clean input with a known theoretical price must produce a complete result. No silent partial failures allowed.
+
+FuturesPricer
+=============
+
+Model: Cost of Carry
+Formula: F = S * e^((r - q) * T)
+
+Parameters:
+- S (spot):      Current index spot price. Must be positive.
+- r (rate):      Risk-free rate. Annualized, continuously compounded, decimal form.
+                 e.g. 6.5% → pass 0.065
+- q (div_yield): Continuous dividend yield. Annualized, decimal form.
+                 e.g. 1.2% → pass 0.012
+- T:             Time to expiry in years. Derived from DTE / day_count.
+- F:             Theoretical futures price.
+
+Basis:
+  basis = actual_futures_price - theoretical_price
+  Positive basis → futures trading rich relative to fair value.
+  Negative basis → futures trading cheap relative to fair value.
+  At expiry, basis converges to zero (no-arbitrage condition).
+
+Delta:
+  Index futures delta = 1.0 with respect to spot.
+  Used in portfolio Greeks aggregation as a uniform interface
+  alongside options delta.
+
+Day Count Convention:
+  Default day_count = 365. Consistent with Black-Scholes engine.
+
+FRM Reference:
+  Cost of Carry model — FRM Part 1, Futures and Forwards.
+  No-arbitrage condition: if F > S*e^((r-q)*T), cash-and-carry
+  arbitrage is possible. Transaction costs create an arbitrage band
+  in practice — basis within that band is not exploitable.
+
+Scalar vs Vectorized:
+  FuturesPricer is scalar by design. Used in scenario engine and
+  portfolio module where per-position calls are appropriate.
+  Batch computation in CuratedFuturesBuilder uses numpy directly
+  on DataFrame columns — no FuturesPricer call overhead per row.
+
+
+CuratedFuturesBuilder
+=====================
+
+Purpose:
+  Joins processed futures with spot, dividend yield, and government
+  bond data. Computes theoretical price and basis. Writes
+  year-partitioned curated parquets to data/curated/futures/{year}/.
+
+Joins Performed:
+  1. v_processed_futures       ← base table
+  2. v_processed_index_spot    ← join on (trade_date, symbol) → spot price
+  3. v_processed_index_yield   ← join on (trade_date, symbol) → div_yield
+  4. v_processed_gbond         ← pivot on trade_date, interpolate via YieldCurve → rate
+
+Unique Key:
+  (trade_date, symbol, expiry_date)
+
+div_yield Convention:
+  Processed layer stores div_yield as percentage (e.g. 1.23).
+  Builder divides by 100 in SQL before any computation.
+  Cost of carry model requires decimal form (e.g. 0.0123).
+
+Rate Interpolation:
+  Uses existing YieldCurve class (linear interpolation, 3M/6M/1Y tenors).
+  Operates row-by-row because DTE varies per row.
+  Try/except per row — interpolation failure produces null rate,
+  downstream columns (theoretical_price, basis) also null.
+
+Vectorized Computation:
+  _compute_quant_columns uses numpy array operations.
+  No Python loop. No FuturesPricer call.
+  T = dte / 365.0 applied as array operation.
+  theoretical_price = spot * exp((rate - div_yield) * T)
+  basis = settle - theoretical_price
+  delta = 1.0 (scalar broadcast to entire column)
+
+Null Handling:
+  Missing spot → null theoretical_price, null basis. Preserved, not filled.
+  Missing gbond tenors → null rate. Preserved, not filled.
+  BANKNIFTY div_yield nulls (March–June 2021) → known data quirk.
+  Preserved as null. Portfolio module flags these positions.
+
+Incremental Mode:
+  Reads max trade_date from existing curated partition per year.
+  Filters processed futures to rows strictly after that date.
+  Concats with existing partition, deduplicates on unique key, rewrites.
+
+Full Mode:
+  Rebuilds all year partitions from scratch.
+  Does not modify processed or ingest layers.
+
+ScenarioEngine
+==============
+
+Two repricing modes per option position:
+
+1. full_reprice (preferred)
+   Requires: iv > 0
+   PnL = BS(shocked params) - BS(base params)
+   Accurate for any shock size.
+
+2. greeks_approx (fallback)
+   Requires: delta, gamma, vega, rho all non-null
+   PnL ≈ delta*ΔS + 0.5*gamma*ΔS² + vega*Δσ_pts + rho*Δr_pts
+   Breaks down for large shocks (>5% spot move).
+
+3. no_data
+   IV null and Greeks null. PnL = 0. Portfolio flags position.
+
+Shock conventions:
+  spot_shock_pct : percentage. -1.5 → spot drops 1.5%.
+  vol_shock_abs  : vol points. +2.0 → IV rises 2 percentage points.
+  rate_shock_bps : basis points. +20 → rate rises 20bps.
+
+Unit alignment for greeks_approx:
+  vega in BS engine is per 1 vol point (already /100 in _bs_greeks).
+  Δσ_pts = vol_shock_abs passed directly in vol points.
+  rho in BS engine is per 1% rate move (already /100 in _bs_greeks).
+  Δr_pts = rate_shock_bps / 100 converts bps to percentage points.
+
+Futures PnL:
+  Linear. Delta = 1. No vol or rate sensitivity.
+  PnL = ΔS * quantity * lot_size.
+
+Short positions:
+  quantity negative → pnl_total sign flips automatically.
+
+Portfolio Module
+================
+
+Input: CSV with columns:
+  symbol, expiry_date, strike, option_type,
+  quantity, entry_date, entry_price
+
+option_type values: CE, PE, XX (futures)
+quantity: positive = long, negative = short
+entry_price: price per unit at time of entry
+strike: 0 for futures positions
+
+MtM PnL (options):
+  current_price = BS(today's snapshot)
+  mtm_pnl = (current_price - entry_price) * quantity * lot_size
+
+MtM PnL (futures):
+  mtm_pnl = (current_spot - entry_price) * quantity * lot_size
+
+Scenario PnL:
+  Delegated to scenario_engine.py per position.
+  Full reprice if IV available. Greeks approx fallback.
+
+Total PnL per position:
+  total_pnl = mtm_pnl + scenario_pnl
+
+Net Greeks:
+  Weighted by quantity * lot_size across all positions.
+  Null Greeks contribute 0.0 to net — not excluded, not errored.
+
+Lot size:
+  Point-in-time lookup from processed lot_size table.
+  Handles NSE lot size changes across years correctly.
+
+no_data positions:
+  Returned in results with all PnL fields = 0.0.
+  Not silently dropped. UI must flag these to user.
+
+# QuantNotes — Phase 4 Risk Engine
+
+---
+
+## Futures Pricing
+
+Model: Cost of Carry
+Formula: F = S * e^((r - q) * T)
+
+Parameters:
+- S (spot):      Current index spot price. Must be positive.
+- r (rate):      Risk-free rate. Annualized, continuously compounded, decimal.
+                 e.g. 6.5% → pass 0.065
+- q (div_yield): Continuous dividend yield. Annualized, decimal.
+                 e.g. 1.2% → pass 0.012
+- T:             Time to expiry in years. Derived from DTE / day_count.
+- F:             Theoretical futures price.
+
+Basis:
+  basis = actual_futures_price - theoretical_price
+  Positive basis → futures trading rich relative to fair value.
+  Negative basis → futures trading cheap relative to fair value.
+  At expiry, basis converges to zero (no-arbitrage condition).
+
+Delta:
+  Index futures delta = 1.0 with respect to spot.
+  Used in portfolio Greeks aggregation as a uniform interface
+  alongside options delta.
+
+Day Count Convention:
+  Default day_count = 365. Consistent with Black-Scholes engine.
+
+FRM Reference:
+  Cost of Carry model — FRM Part 1, Futures and Forwards.
+  No-arbitrage condition: if F > S*e^((r-q)*T), cash-and-carry
+  arbitrage is possible. Transaction costs create an arbitrage band
+  in practice — basis within that band is not exploitable.
+
+Scalar vs Vectorized:
+  FuturesPricer is scalar by design. Used in scenario engine and
+  portfolio module where per-position calls are appropriate.
+  Batch computation in CuratedFuturesBuilder uses numpy directly
+  on DataFrame columns — no FuturesPricer call overhead per row.
+
+---
+
+## Curated Futures Builder
+
+Purpose:
+  Joins processed futures with spot, dividend yield, and government
+  bond data. Computes theoretical price and basis. Writes
+  year-partitioned curated parquets to data/curated/futures/{year}/.
+
+Joins Performed:
+  1. v_processed_futures       ← base table
+  2. v_processed_index_spot    ← join on (trade_date, symbol) → spot price
+  3. v_processed_index_yield   ← join on (trade_date, symbol) → div_yield
+  4. v_processed_gbond         ← pivot on trade_date → rate_3m, rate_6m, rate_1y
+
+Unique Key:
+  (trade_date, symbol, expiry_date)
+
+div_yield Convention:
+  Processed layer stores div_yield as percentage (e.g. 1.23).
+  Builder divides by 100 in SQL before any computation.
+  Cost of carry model requires decimal form (e.g. 0.0123).
+
+Rate Interpolation:
+  np.where chain — identical to CuratedOptionChainBuilder.
+  Breakpoints: 91 days (3M), 182 days (6M), 365 days (1Y).
+  DTE < 91  → use r3m flat
+  DTE < 182 → linear interpolate between r3m and r6m
+  DTE < 365 → linear interpolate between r6m and r1y
+  DTE >= 365 → use r1y flat
+
+Vectorized Computation:
+  T = dte / 365.0 applied as numpy array operation.
+  theoretical_price = spot * exp((rate - div_yield) * T)
+  basis = settle - theoretical_price
+  delta = 1.0 broadcast to entire column.
+  No Python loop. No FuturesPricer call.
+
+Null Handling:
+  Missing spot → null theoretical_price, null basis. Preserved, not filled.
+  Missing gbond tenors → null rate. Preserved, not filled.
+  BANKNIFTY div_yield nulls (March–June 2021) → known data quirk.
+  Preserved as null. Portfolio module flags these positions.
+
+Incremental Mode:
+  Reads max trade_date from existing curated partition per year.
+  Filters processed futures to rows strictly after that date.
+  Concats with existing partition, deduplicates on unique key, rewrites.
+
+Full Mode:
+  Rebuilds all year partitions from scratch.
+  Does not modify processed or ingest layers.
+
+Daily Pipeline Integration:
+  CuratedFuturesBuilder runs after CuratedOptionChainBuilder in
+  run_daily_fetch.py in incremental mode. No manual trigger needed.
+
+---
+
+## Scenario Engine
+
+Two repricing modes per option position:
+
+1. full_reprice (preferred)
+   Requires: iv > 0
+   PnL = BS(shocked params) - BS(base params)
+   Accurate for any shock size.
+
+2. greeks_approx (fallback)
+   Requires: delta, gamma, vega, rho all non-null
+   PnL ≈ delta*ΔS + 0.5*gamma*ΔS² + vega*Δσ_pts + rho*Δr_pts
+   Breaks down for large shocks (>5% spot move).
+
+3. no_data
+   IV null and Greeks null. PnL = 0. Portfolio flags position.
+
+Shock Conventions:
+  spot_shock_pct : percentage. -1.5 → spot drops 1.5%.
+  vol_shock_abs  : vol points. +2.0 → IV rises 2 percentage points.
+  rate_shock_bps : basis points. +20 → rate rises 20bps.
+
+Shock Application:
+  S_shocked = S * (1 + spot_shock_pct / 100)
+  r_shocked = r + rate_shock_bps / 10000
+  σ_shocked = iv + vol_shock_abs / 100
+  σ_shocked floored at 1e-4 to prevent BS domain errors.
+
+Unit Alignment for greeks_approx:
+  vega in BS engine is per 1 vol point (already /100 in _bs_greeks).
+  Δσ_pts = vol_shock_abs passed directly in vol points.
+  rho in BS engine is per 1% rate move (already /100 in _bs_greeks).
+  Δr_pts = rate_shock_bps / 100 converts bps to percentage points.
+
+Futures PnL:
+  Linear. Delta = 1. No vol or rate sensitivity.
+  PnL = ΔS * quantity * lot_size.
+
+Short Positions:
+  quantity negative → pnl_total sign flips automatically.
+  No special handling needed anywhere in the engine.
+
+ScenarioPnL Fields:
+  base_price    : BS price at current market parameters.
+  shocked_price : BS price at shocked parameters.
+  mtm_pnl       : set to 0.0 by engine. Portfolio module overwrites.
+  pnl_per_lot   : PnL per single unit (before lot size and quantity).
+  pnl_total     : pnl_per_lot * quantity * lot_size.
+  method        : full_reprice | greeks_approx | futures_linear |
+                  expired | no_data | base_price_only.
+
+---
+
+## Portfolio Module
+
+Input CSV Contract:
+  symbol, expiry_date, strike, option_type,
+  quantity, entry_date, entry_price
+
+  option_type values : CE, PE, XX (futures)
+  strike             : 0 for futures positions
+  quantity           : positive = long, negative = short
+  entry_price        : price per unit at time of entry
+  entry_date         : YYYY-MM-DD, stored for audit trail
+
+MtM PnL (options):
+  current_price = BS(today's snapshot using current IV)
+  mtm_pnl = (current_price - entry_price) * quantity * lot_size
+  Returns null current_price and 0.0 mtm_pnl if IV null or DTE <= 0.
+
+MtM PnL (futures):
+  mtm_pnl = (current_spot - entry_price) * quantity * lot_size
+  Always computable — no IV dependency.
+
+Scenario PnL:
+  Delegated to scenario_engine.py per position.
+  Full reprice if IV available. Greeks approx fallback.
+  Futures use linear payoff.
+
+Total PnL per position:
+  total_pnl = mtm_pnl + scenario_pnl
+
+Net Greeks:
+  Weighted by quantity * lot_size across all positions.
+  Null Greeks contribute 0.0 to net — not excluded, not errored.
+  Formula: sum(greek * quantity * lot_size) for all positions.
+
+Lot Size:
+  Point-in-time lookup from processed lot_size table.
+  Handles NSE lot size changes across years correctly.
+  Open-ended periods have end_date = None — treated as
+  valid for any trade_date after start_date.
+  Fallback: lot_size = 1 if no match found (logged separately).
+
+no_data Positions:
+  Returned in results with all PnL fields = 0.0.
+  Not silently dropped. UI must flag these to user.
+  Causes: expiry not in curated layer, symbol mismatch,
+  strike not found for that trade_date.
+
+CSV Validation Rules:
+  - All seven required columns must be present
+  - symbol must be in {NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY}
+  - option_type must be in {CE, PE, XX}
+  - quantity cannot be zero
+  - entry_price must be positive
+  Fails fast on first violation with clear error message.
+
+---
+
+## Portfolio API Endpoint
+
+Endpoint: POST /portfolio/analyze
+Content-Type: multipart/form-data
+
+Form Fields:
+  trade_date      : date string YYYY-MM-DD — as-of date for curated data
+  spot_shock_pct  : float — percentage spot shock
+  vol_shock_abs   : float — absolute vol shock in vol points
+  rate_shock_bps  : float — rate shock in basis points
+  file            : CSV file upload
+
+Data Flow:
+  CSV bytes parsed via pandas read_csv from BytesIO
+  Curated options queried for trade_date — all symbols and expiries
+  Curated futures queried for trade_date — all symbols and expiries
+  Lot size table loaded in full — point-in-time join done in portfolio module
+  run_portfolio() called with all DataFrames and shock
+  PortfolioResult converted to PortfolioResponse Pydantic model
+
+Date Type Handling:
+  DuckDB returns TIMESTAMP columns as datetime64[us] in pandas.
+  All date columns explicitly cast via .dt.date after query.
+  Lot size start_date and end_date stored as object strings in parquet.
+  Converted via pd.to_datetime(..., errors="coerce").dt.date
+  errors="coerce" converts None to NaT safely.
+
+Error Responses:
+  400 — non-CSV file uploaded
+  400 — empty CSV file
+  400 — missing required columns
+  400 — unknown symbols or option types
+  400 — no curated data for requested trade_date
+  500 — unexpected errors propagate to uvicorn log
+
+Response Structure:
+  PortfolioResponse
+    trade_date       : date
+    positions        : list[PositionResult]
+    summary          : PortfolioSummary
+
+  PositionResult
+    All position fields + current_price, mtm_pnl,
+    scenario_pnl, total_pnl, method, Greeks (all optional)
+
+  PortfolioSummary
+    total_mtm_pnl, total_scenario_pnl, total_pnl
+    net_delta, net_gamma, net_vega, net_theta, net_rho

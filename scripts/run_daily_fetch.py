@@ -22,6 +22,8 @@ from src.data.processed_index_yield_builder import ProcessedIndexYieldBuilder
 from src.data.processed_gbond_builder import ProcessedGBondBuilder
 from src.data.curated_option_chain_builder import CuratedOptionChainBuilder
 from src.data.sync_checker import SyncChecker
+from src.data.curated_futures_builder import CuratedFuturesBuilder
+
 
 def main():
 
@@ -48,6 +50,7 @@ def main():
 
     # Curated Layer
     CuratedOptionChainBuilder(config).run("incremental")
+    CuratedFuturesBuilder(config).run("incremental")
 
     #Sync Checker
     SyncChecker(config).run(mode="daily")
