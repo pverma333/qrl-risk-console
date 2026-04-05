@@ -10,6 +10,25 @@ router = APIRouter(prefix="/chain", tags=["chain"])
 
 VALID_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"}
 
+@router.get("/expiries/{symbol}/{trade_date}")
+def expiries_endpoint(
+    symbol:     str,
+    trade_date: date,
+    db:         duckdb.DuckDBPyConnection = Depends(get_db),
+):
+    symbol = symbol.upper()
+    if symbol not in VALID_SYMBOLS:
+        raise HTTPException(status_code=400, detail=f"Unknown symbol: {symbol}")
+
+    result = db.execute("""
+        SELECT DISTINCT CAST(expiry_date AS DATE) AS expiry_date
+        FROM v_curated_option_chain
+        WHERE symbol = ?
+          AND CAST(trade_date AS DATE) = ?
+        ORDER BY expiry_date ASC
+    """, [symbol, trade_date]).fetchall()
+
+    return {"expiries": [str(r[0]) for r in result]}
 
 @router.get("/{symbol}/{trade_date}/{expiry_date}", response_model=ChainResponse)
 def chain_endpoint(

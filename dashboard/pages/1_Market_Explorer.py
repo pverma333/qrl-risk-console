@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 import sys
 from pathlib import Path
+from datetime import date as dt
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import API_BASE, VALID_SYMBOLS
@@ -17,7 +18,7 @@ st.divider()
 def fetch_expiries(symbol: str, trade_date: str) -> list[str]:
     try:
         r = requests.get(
-            f"{API_BASE}/debug/expiries/{symbol}/{trade_date}",
+            f"{API_BASE}/chain/expiries/{symbol}/{trade_date}",
             timeout=10,
         )
         if r.status_code == 200:
@@ -56,7 +57,7 @@ def fetch_vix(trade_date: str) -> float | None:
 with st.sidebar:
     st.header("Controls")
     symbol     = st.selectbox("Index", VALID_SYMBOLS)
-    trade_date = st.date_input("Trade Date")
+    trade_date = st.date_input("Trade Date", value=dt(2026, 3, 13))
     trade_date_str = str(trade_date)
 
     expiries = fetch_expiries(symbol, trade_date_str)
