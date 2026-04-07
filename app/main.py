@@ -27,3 +27,9 @@ kill -9 *pids*
 
 uvicorn app.main:app --reload
 """
+
+#launch dashboard
+"""
+cd /Users/priyamverma/Documents/GitHub/qrl-risk-console
+streamlit run dashboard/app.py
+"""
