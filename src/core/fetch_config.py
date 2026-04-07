@@ -1,10 +1,15 @@
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, ClassVar
 
 @dataclass
 class FetchConfig:
-    base_dir: Path
+    base_dir: Path = field(
+    default_factory=lambda: Path(
+        os.environ.get("QRL_BASE_DIR", str(Path(__file__).resolve().parent.parent.parent))
+    )
+)
     use_year_partition: bool = False
 
     # Derivatives symbols
