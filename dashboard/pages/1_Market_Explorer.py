@@ -53,7 +53,7 @@ def fetch_vix(trade_date: str) -> float | None:
         return None
 
 
-# ── Sidebar controls ──
+#Sidebar
 with st.sidebar:
     st.header("Controls")
     symbol     = st.selectbox("Index", VALID_SYMBOLS)
@@ -77,7 +77,6 @@ with st.sidebar:
     st.caption(f"Rate interpolation: Linear (3M/6M/1Y)")
     st.caption(f"Data as-of: {trade_date_str}")
 
-# ── Main content ──
 if load:
     with st.spinner("Loading option chain..."):
         data = fetch_chain(symbol, trade_date_str, expiry_date_str)
@@ -87,8 +86,6 @@ if load:
         st.stop()
 
     vix = fetch_vix(trade_date_str)
-
-    # ── Summary metrics ──
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Symbol", symbol)
     col2.metric("Rows", data["row_count"])
@@ -104,7 +101,6 @@ if load:
     ce_df = df[df["option_type"] == "CE"].copy()
     pe_df = df[df["option_type"] == "PE"].copy()
 
-    # ── IV Smile ──
     st.subheader("IV Smile")
     iv_df = pd.concat([
         ce_df[["strike", "iv"]].rename(columns={"iv": "IV"}).assign(Type="CE"),
@@ -124,7 +120,6 @@ if load:
 
     st.divider()
 
-    # ── Option Chain Table ──
     st.subheader("Option Chain")
 
     display_cols = ["strike", "option_type", "settle", "iv", "delta", "gamma", "vega", "theta", "rho", "open_interest", "dte"]
@@ -141,7 +136,6 @@ if load:
 
     st.divider()
 
-    # ── Greeks Heatmap ──
     st.subheader("Delta Heatmap")
     delta_df = df[["strike", "option_type", "delta"]].dropna(subset=["delta"])
     if not delta_df.empty:
@@ -156,7 +150,6 @@ if load:
 
     st.divider()
 
-    # ── Export ──
     st.subheader("Export")
     csv = df.to_csv(index=False)
     st.download_button(
