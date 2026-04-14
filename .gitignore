@@ -48,3 +48,5 @@ coverage report --include="src/quant/*,src/data/*"
 ""
 test.py
 
+scripts/daily_sync.sh
+
