@@ -9,6 +9,11 @@ from datetime import date as dt
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import API_BASE, VALID_SYMBOLS
 
+@st.cache_data(ttl=3600)
+def get_latest_trade_date():
+    from config import fetch_latest_trade_date
+    return fetch_latest_trade_date()
+
 st.set_page_config(page_title="Market Explorer", layout="wide")
 st.title("Market Explorer")
 st.caption("Browse option chains, IV smile, and Greeks for any index, date, and expiry.")
@@ -17,10 +22,7 @@ st.divider()
 
 def fetch_expiries(symbol: str, trade_date: str) -> list[str]:
     try:
-        r = requests.get(
-            f"{API_BASE}/chain/expiries/{symbol}/{trade_date}",
-            timeout=10,
-        )
+        r = requests.get(f"{API_BASE}/chain/expiries/{symbol}/{trade_date}", timeout=10)
         if r.status_code == 200:
             return r.json().get("expiries", [])
         return []
@@ -30,10 +32,7 @@ def fetch_expiries(symbol: str, trade_date: str) -> list[str]:
 
 def fetch_chain(symbol: str, trade_date: str, expiry_date: str) -> dict | None:
     try:
-        r = requests.get(
-            f"{API_BASE}/chain/{symbol}/{trade_date}/{expiry_date}",
-            timeout=15,
-        )
+        r = requests.get(f"{API_BASE}/chain/{symbol}/{trade_date}/{expiry_date}", timeout=15)
         if r.status_code == 200:
             return r.json()
         st.error(f"API error {r.status_code}: {r.json().get('detail', 'Unknown error')}")
@@ -53,44 +52,19 @@ def fetch_vix(trade_date: str) -> float | None:
         return None
 
 
-#Sidebar
-with st.sidebar:
-    st.header("Controls")
-    symbol     = st.selectbox("Index", VALID_SYMBOLS)
-    trade_date = st.date_input("Trade Date", value=dt(2026, 3, 13))
-    trade_date_str = str(trade_date)
-
-    expiries = fetch_expiries(symbol, trade_date_str)
-    if not expiries:
-        st.warning("No expiries found for this date. Try a trading day.")
-        st.stop()
-
-    expiry_date     = st.selectbox("Expiry", expiries)
-    expiry_date_str = str(expiry_date)
-
-    load = st.button("Load Chain", type="primary", use_container_width=True)
-
-    st.divider()
-    st.subheader("Audit Panel")
-    st.caption(f"Pricing model: Black-Scholes")
-    st.caption(f"Day count: 365")
-    st.caption(f"Rate interpolation: Linear (3M/6M/1Y)")
-    st.caption(f"Data as-of: {trade_date_str}")
-
-if load:
-    with st.spinner("Loading option chain..."):
-        data = fetch_chain(symbol, trade_date_str, expiry_date_str)
+def render_results(symbol: str, trade_date_str: str, expiry_date_str: str):
+    data = st.session_state.get("me_chain_data")
+    vix  = st.session_state.get("me_vix")
 
     if data is None or data["row_count"] == 0:
         st.warning("No data returned for this combination.")
-        st.stop()
+        return
 
-    vix = fetch_vix(trade_date_str)
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Symbol", symbol)
-    col2.metric("Rows", data["row_count"])
+    col1.metric("Symbol",      symbol)
+    col2.metric("Rows",        data["row_count"])
     col3.metric("IV Computed", data["iv_computed_count"])
-    col4.metric("India VIX", f"{vix:.2f}" if vix else "N/A")
+    col4.metric("India VIX",   f"{vix:.2f}" if vix else "N/A")
 
     st.divider()
 
@@ -121,17 +95,14 @@ if load:
     st.divider()
 
     st.subheader("Option Chain")
-
     display_cols = ["strike", "option_type", "settle", "iv", "delta", "gamma", "vega", "theta", "rho", "open_interest", "dte"]
     chain_display = df[display_cols].copy()
-
     chain_display["iv"]    = chain_display["iv"].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
     chain_display["delta"] = chain_display["delta"].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
     chain_display["gamma"] = chain_display["gamma"].map(lambda x: f"{x:.6f}" if pd.notna(x) else "—")
     chain_display["vega"]  = chain_display["vega"].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
     chain_display["theta"] = chain_display["theta"].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
     chain_display["rho"]   = chain_display["rho"].map(lambda x: f"{x:.4f}" if pd.notna(x) else "—")
-
     st.dataframe(chain_display, use_container_width=True, height=400)
 
     st.divider()
@@ -157,4 +128,50 @@ if load:
         data=csv,
         file_name=f"chain_{symbol}_{trade_date_str}_{expiry_date_str}.csv",
         mime="text/csv",
+    )
+
+
+# ── Sidebar ──
+with st.sidebar:
+    st.header("Controls")
+    symbol         = st.selectbox("Index", VALID_SYMBOLS)
+    trade_date = st.date_input("Trade Date", value=get_latest_trade_date())
+    trade_date_str = str(trade_date)
+
+    expiries = fetch_expiries(symbol, trade_date_str)
+    if not expiries:
+        st.warning("No expiries found for this date. Try a trading day.")
+        st.stop()
+
+    expiry_date     = st.selectbox("Expiry", expiries)
+    expiry_date_str = str(expiry_date)
+
+    load = st.button("Load Chain", type="primary", use_container_width=True)
+
+    st.divider()
+    st.subheader("Audit Panel")
+    st.caption("Pricing model: Black-Scholes")
+    st.caption("Day count: 365")
+    st.caption("Rate interpolation: Linear (3M/6M/1Y)")
+    st.caption(f"Data as-of: {trade_date_str}")
+
+
+# ── Load on button click ──
+if load:
+    with st.spinner("Loading option chain..."):
+        data = fetch_chain(symbol, trade_date_str, expiry_date_str)
+        vix  = fetch_vix(trade_date_str)
+    st.session_state["me_chain_data"]    = data
+    st.session_state["me_vix"]           = vix
+    st.session_state["me_symbol"]        = symbol
+    st.session_state["me_trade_date"]    = trade_date_str
+    st.session_state["me_expiry_date"]   = expiry_date_str
+
+
+# ── Render from session state ──
+if st.session_state.get("me_chain_data") is not None:
+    render_results(
+        st.session_state["me_symbol"],
+        st.session_state["me_trade_date"],
+        st.session_state["me_expiry_date"],
     )

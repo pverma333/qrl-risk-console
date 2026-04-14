@@ -46,3 +46,14 @@ def chain_endpoint(
         raise HTTPException(status_code=400, detail="expiry_date must be >= trade_date")
 
     return get_option_chain(symbol, trade_date, expiry_date, db)
+
+@router.get("/latest-date", response_model=dict)
+def latest_date_endpoint(db: duckdb.DuckDBPyConnection = Depends(get_db)):
+    query = """
+        SELECT MAX(CAST(trade_date AS DATE)) AS latest_date
+        FROM v_curated_option_chain
+    """
+    result = db.execute(query).fetchone()
+    if result is None or result[0] is None:
+        raise HTTPException(status_code=404, detail="No curated data found.")
+    return {"latest_date": str(result[0])}
