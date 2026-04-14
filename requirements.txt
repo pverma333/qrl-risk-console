@@ -10,3 +10,4 @@ streamlit
 requests
 plotly
 pyarrow
+boto3
