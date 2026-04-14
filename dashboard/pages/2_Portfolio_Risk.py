@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import json
+import time
 from datetime import date
 import sys
 from pathlib import Path
@@ -27,25 +28,29 @@ def call_portfolio_api(
     rate_shock_bps: float,
     csv_bytes: bytes,
 ) -> dict | None:
-    try:
-        r = requests.post(
-            f"{API_BASE}/portfolio/analyze",
-            data={
-                "trade_date":     trade_date,
-                "spot_shock_pct": spot_shock_pct,
-                "vol_shock_abs":  vol_shock_abs,
-                "rate_shock_bps": rate_shock_bps,
-            },
-            files={"file": ("portfolio.csv", csv_bytes, "text/csv")},
-            timeout=30,
-        )
-        if r.status_code == 200:
-            return r.json()
-        st.error(f"API error {r.status_code}: {r.json().get('detail', 'Unknown error')}")
-        return None
-    except Exception as e:
-        st.error(f"Connection error: {e}")
-        return None
+    for attempt in range(3):
+        try:
+            r = requests.post(
+                f"{API_BASE}/portfolio/analyze",
+                data={
+                    "trade_date":     trade_date,
+                    "spot_shock_pct": spot_shock_pct,
+                    "vol_shock_abs":  vol_shock_abs,
+                    "rate_shock_bps": rate_shock_bps,
+                },
+                files={"file": ("portfolio.csv", csv_bytes, "text/csv")},
+                timeout=90,
+            )
+            if r.status_code == 200:
+                return r.json()
+            st.error(f"API error {r.status_code}: {r.json().get('detail', 'Unknown error')}")
+            return None
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(3)
+                continue
+            st.error(f"Connection error after 3 attempts: {e}")
+            return None
 
 
 def render_results():
@@ -53,16 +58,16 @@ def render_results():
     if result is None:
         return
 
-    meta    = st.session_state.get("pr_meta", {})
+    meta      = st.session_state.get("pr_meta", {})
     summary   = result.get("summary", {})
     positions = result.get("positions", [])
 
     st.subheader("Summary")
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Positions",        len(positions))
-    col2.metric("Total MtM PnL",    f"₹{summary.get('total_mtm_pnl', 0):,.0f}")
+    col1.metric("Positions",          len(positions))
+    col2.metric("Total MtM PnL",      f"₹{summary.get('total_mtm_pnl', 0):,.0f}")
     col3.metric("Total Scenario PnL", f"₹{summary.get('total_scenario_pnl', 0):,.0f}")
-    col4.metric("Net Delta",        f"{summary.get('net_delta', 0):.2f}")
+    col4.metric("Net Delta",          f"{summary.get('net_delta', 0):.2f}")
 
     st.divider()
 
@@ -91,10 +96,14 @@ def render_results():
 
     for col in ["mtm_pnl", "scenario_pnl"]:
         if col in pos_display.columns:
-            pos_display[col] = pos_display[col].apply(lambda x: f"₹{x:,.0f}" if pd.notna(x) else "—")
+            pos_display[col] = pos_display[col].apply(
+                lambda x: f"₹{x:,.0f}" if pd.notna(x) else "—"
+            )
     for col in ["current_price", "entry_price"]:
         if col in pos_display.columns:
-            pos_display[col] = pos_display[col].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
+            pos_display[col] = pos_display[col].apply(
+                lambda x: f"{x:.2f}" if pd.notna(x) else "—"
+            )
 
     has_status = "status" in pos_df.columns
 
@@ -108,7 +117,10 @@ def render_results():
     if has_status:
         no_data_count = pos_df[pos_df["status"] == "no_data"].shape[0]
         if no_data_count > 0:
-            st.warning(f"{no_data_count} position(s) returned no_data — no curated data found for that contract on this trade date.")
+            st.warning(
+                f"{no_data_count} position(s) returned no_data — "
+                "no curated data found for that contract on this trade date."
+            )
 
     st.divider()
 
@@ -125,10 +137,10 @@ def render_results():
 
     with export_col2:
         manifest = {
-            "trade_date":        meta.get("trade_date"),
-            "pricing_model":     "Black-Scholes",
-            "day_count":         365,
-            "rate_interpolation":"linear_3M_6M_1Y",
+            "trade_date":         meta.get("trade_date"),
+            "pricing_model":      "Black-Scholes",
+            "day_count":          365,
+            "rate_interpolation": "linear_3M_6M_1Y",
             "shocks": {
                 "spot_shock_pct": meta.get("spot_shock_pct"),
                 "vol_shock_abs":  meta.get("vol_shock_abs"),
@@ -148,13 +160,13 @@ def render_results():
 with st.sidebar:
     st.header("Controls")
 
-    trade_date = st.date_input("Trade Date", value=get_latest_trade_date())
+    trade_date     = st.date_input("Trade Date", value=get_latest_trade_date())
     trade_date_str = str(trade_date)
 
     st.subheader("Shock Parameters")
-    spot_shock_pct = st.slider("Spot Shock (%)",       min_value=-10.0,  max_value=10.0,  value=SHOCK_DEFAULTS["spot_shock_pct"], step=0.5)
-    vol_shock_abs  = st.slider("Vol Shock (vol points)",min_value=-10.0, max_value=10.0,  value=SHOCK_DEFAULTS["vol_shock_abs"],  step=0.5)
-    rate_shock_bps = st.slider("Rate Shock (bps)",     min_value=-100.0, max_value=100.0, value=SHOCK_DEFAULTS["rate_shock_bps"], step=5.0)
+    spot_shock_pct = st.slider("Spot Shock (%)",        min_value=-10.0,  max_value=10.0,  value=SHOCK_DEFAULTS["spot_shock_pct"], step=0.5)
+    vol_shock_abs  = st.slider("Vol Shock (vol points)", min_value=-10.0, max_value=10.0,  value=SHOCK_DEFAULTS["vol_shock_abs"],  step=0.5)
+    rate_shock_bps = st.slider("Rate Shock (bps)",      min_value=-100.0, max_value=100.0, value=SHOCK_DEFAULTS["rate_shock_bps"], step=5.0)
 
     st.subheader("Portfolio Upload")
     uploaded_file = st.file_uploader("Upload positions CSV", type=["csv"])
@@ -190,7 +202,9 @@ if analyze:
 
     csv_bytes = uploaded_file.read()
     with st.spinner("Analyzing portfolio..."):
-        result = call_portfolio_api(trade_date_str, spot_shock_pct, vol_shock_abs, rate_shock_bps, csv_bytes)
+        result = call_portfolio_api(
+            trade_date_str, spot_shock_pct, vol_shock_abs, rate_shock_bps, csv_bytes
+        )
 
     if result is not None:
         st.session_state["pr_result"] = result

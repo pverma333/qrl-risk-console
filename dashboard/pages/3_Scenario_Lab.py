@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import json
+import time
 from datetime import date
 import sys
 from pathlib import Path
@@ -21,36 +22,58 @@ st.divider()
 
 
 def fetch_expiries(symbol: str, trade_date: str) -> list[str]:
-    try:
-        r = requests.get(f"{API_BASE}/chain/expiries/{symbol}/{trade_date}", timeout=10)
-        if r.status_code == 200:
-            return r.json().get("expiries", [])
-        return []
-    except Exception:
-        return []
+    for attempt in range(3):
+        try:
+            r = requests.get(
+                f"{API_BASE}/chain/expiries/{symbol}/{trade_date}",
+                timeout=30,
+            )
+            if r.status_code == 200:
+                return r.json().get("expiries", [])
+            return []
+        except Exception:
+            if attempt < 2:
+                time.sleep(3)
+                continue
+            return []
 
 
 def fetch_strikes(symbol: str, trade_date: str, expiry_date: str) -> list[float]:
-    try:
-        r = requests.get(f"{API_BASE}/chain/{symbol}/{trade_date}/{expiry_date}", timeout=15)
-        if r.status_code == 200:
-            rows = r.json().get("rows", [])
-            return sorted(set(row["strike"] for row in rows))
-        return []
-    except Exception:
-        return []
+    for attempt in range(3):
+        try:
+            r = requests.get(
+                f"{API_BASE}/chain/{symbol}/{trade_date}/{expiry_date}",
+                timeout=60,
+            )
+            if r.status_code == 200:
+                rows = r.json().get("rows", [])
+                return sorted(set(row["strike"] for row in rows))
+            return []
+        except Exception:
+            if attempt < 2:
+                time.sleep(3)
+                continue
+            return []
 
 
 def call_scenario_api(payload: dict) -> dict | None:
-    try:
-        r = requests.post(f"{API_BASE}/scenario/", json=payload, timeout=15)
-        if r.status_code == 200:
-            return r.json()
-        st.error(f"API error {r.status_code}: {r.json().get('detail', 'Unknown error')}")
-        return None
-    except Exception as e:
-        st.error(f"Connection error: {e}")
-        return None
+    for attempt in range(3):
+        try:
+            r = requests.post(
+                f"{API_BASE}/scenario/",
+                json=payload,
+                timeout=60,
+            )
+            if r.status_code == 200:
+                return r.json()
+            st.error(f"API error {r.status_code}: {r.json().get('detail', 'Unknown error')}")
+            return None
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(3)
+                continue
+            st.error(f"Connection error after 3 attempts: {e}")
+            return None
 
 
 def render_results():
@@ -96,10 +119,10 @@ def render_results():
     meta = st.session_state.get("sl_meta", {})
     manifest = {
         **meta,
-        "pricing_model":     "Black-Scholes",
-        "day_count":         365,
-        "rate_interpolation":"linear_3M_6M_1Y",
-        "result":            result,
+        "pricing_model":      "Black-Scholes",
+        "day_count":          365,
+        "rate_interpolation": "linear_3M_6M_1Y",
+        "result":             result,
     }
     st.download_button(
         label="Download Run Manifest JSON",
@@ -114,7 +137,7 @@ with st.sidebar:
     st.header("Controls")
 
     symbol         = st.selectbox("Index", VALID_SYMBOLS)
-    trade_date = st.date_input("Trade Date", value=get_latest_trade_date())
+    trade_date     = st.date_input("Trade Date", value=get_latest_trade_date())
     trade_date_str = str(trade_date)
 
     expiries = fetch_expiries(symbol, trade_date_str)
@@ -184,12 +207,12 @@ if run:
     if result is not None:
         st.session_state["sl_result"] = result
         st.session_state["sl_meta"]   = {
-            "symbol":         symbol,
-            "trade_date":     trade_date_str,
-            "expiry_date":    expiry_date_str,
-            "strike":         float(strike),
-            "option_type":    option_type,
-            "quantity":       int(quantity),
+            "symbol":      symbol,
+            "trade_date":  trade_date_str,
+            "expiry_date": expiry_date_str,
+            "strike":      float(strike),
+            "option_type": option_type,
+            "quantity":    int(quantity),
             "shocks": {
                 "spot_shock_pct": spot_shock_pct,
                 "vol_shock_abs":  vol_shock_abs,

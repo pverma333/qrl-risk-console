@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import plotly.graph_objects as go
 import json
+import time
 from datetime import date
 import sys
 from pathlib import Path
@@ -21,21 +22,34 @@ st.caption("Historical simulation VaR and CVaR across 252 trading day scenarios.
 st.divider()
 
 
-def call_var_api(symbol: str, trade_date: str, lookback_days: int, csv_bytes: bytes) -> dict | None:
-    try:
-        r = requests.post(
-            f"{API_BASE}/var/analyze",
-            data={"symbol": symbol, "trade_date": trade_date, "lookback_days": lookback_days},
-            files={"file": ("portfolio.csv", csv_bytes, "text/csv")},
-            timeout=60,
-        )
-        if r.status_code == 200:
-            return r.json()
-        st.error(f"API error {r.status_code}: {r.json().get('detail', 'Unknown error')}")
-        return None
-    except Exception as e:
-        st.error(f"Connection error: {e}")
-        return None
+def call_var_api(
+    symbol: str,
+    trade_date: str,
+    lookback_days: int,
+    csv_bytes: bytes,
+) -> dict | None:
+    for attempt in range(3):
+        try:
+            r = requests.post(
+                f"{API_BASE}/var/analyze",
+                data={
+                    "symbol":        symbol,
+                    "trade_date":    trade_date,
+                    "lookback_days": lookback_days,
+                },
+                files={"file": ("portfolio.csv", csv_bytes, "text/csv")},
+                timeout=120,
+            )
+            if r.status_code == 200:
+                return r.json()
+            st.error(f"API error {r.status_code}: {r.json().get('detail', 'Unknown error')}")
+            return None
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(3)
+                continue
+            st.error(f"Connection error after 3 attempts: {e}")
+            return None
 
 
 def render_results():
@@ -88,14 +102,20 @@ def render_results():
         cvar_99 = -var_summary.get("cvar_99", 0)
 
         fig = go.Figure()
-        fig.add_trace(go.Histogram(x=pnl_values, nbinsx=40, name="PnL Distribution", marker_color="#4C9BE8", opacity=0.75))
+        fig.add_trace(go.Histogram(
+            x=pnl_values, nbinsx=40, name="PnL Distribution",
+            marker_color="#4C9BE8", opacity=0.75,
+        ))
         for val, label, color in [
             (var_95,  "VaR 95%",  "#FFA500"),
             (var_99,  "VaR 99%",  "#FF4500"),
             (cvar_95, "CVaR 95%", "#FFD700"),
             (cvar_99, "CVaR 99%", "#FF0000"),
         ]:
-            fig.add_vline(x=val, line_dash="dash", line_color=color, annotation_text=label, annotation_position="top")
+            fig.add_vline(
+                x=val, line_dash="dash", line_color=color,
+                annotation_text=label, annotation_position="top",
+            )
 
         fig.update_layout(
             xaxis_title="Portfolio PnL (₹)", yaxis_title="Frequency",
@@ -110,12 +130,22 @@ def render_results():
         st.divider()
 
         st.subheader("Scenario Detail")
-        display_df = scenario_df[[c for c in ["date", "spot_return_pct", "portfolio_pnl"] if c in scenario_df.columns]].copy()
+        display_df = scenario_df[
+            [c for c in ["date", "spot_return_pct", "portfolio_pnl"] if c in scenario_df.columns]
+        ].copy()
         if "portfolio_pnl" in display_df.columns:
-            display_df["portfolio_pnl"] = display_df["portfolio_pnl"].apply(lambda x: f"₹{x:,.0f}")
+            display_df["portfolio_pnl"] = display_df["portfolio_pnl"].apply(
+                lambda x: f"₹{x:,.0f}"
+            )
         if "spot_return_pct" in display_df.columns:
-            display_df["spot_return_pct"] = display_df["spot_return_pct"].apply(lambda x: f"{x:+.2f}%")
-        display_df = display_df.rename(columns={"date": "Date", "spot_return_pct": "Spot Return", "portfolio_pnl": "Portfolio PnL"})
+            display_df["spot_return_pct"] = display_df["spot_return_pct"].apply(
+                lambda x: f"{x:+.2f}%"
+            )
+        display_df = display_df.rename(columns={
+            "date":            "Date",
+            "spot_return_pct": "Spot Return",
+            "portfolio_pnl":   "Portfolio PnL",
+        })
         st.dataframe(display_df, use_container_width=True, height=300)
 
     st.divider()
@@ -156,10 +186,13 @@ with st.sidebar:
     st.header("Controls")
 
     symbol         = st.selectbox("Index", VALID_SYMBOLS)
-    trade_date = st.date_input("Trade Date", value=get_latest_trade_date())
+    trade_date     = st.date_input("Trade Date", value=get_latest_trade_date())
     trade_date_str = str(trade_date)
 
-    lookback_days = st.slider("Lookback (trading days)", min_value=21, max_value=252, value=252, step=21)
+    lookback_days = st.slider(
+        "Lookback (trading days)",
+        min_value=21, max_value=252, value=252, step=21,
+    )
 
     st.subheader("Portfolio Upload")
     uploaded_file = st.file_uploader("Upload positions CSV", type=["csv"])
