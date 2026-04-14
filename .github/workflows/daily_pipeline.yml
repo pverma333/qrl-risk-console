@@ -1,0 +1,42 @@
+name: Daily Data Pipeline
+
+on:
+  schedule:
+    - cron: "0 16 * * 1-5"  # 16:00 UTC = 21:30 IST, Mon-Fri
+  workflow_dispatch:
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt boto3
+
+      - name: Set QRL_BASE_DIR
+        run: echo "QRL_BASE_DIR=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+
+      - name: Run daily fetch pipeline
+        env:
+          QRL_BASE_DIR: ${{ github.workspace }}
+        run: python -m scripts.run_daily_fetch
+
+      - name: Upload updated parquets to R2
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
+          QRL_BASE_DIR:  ${{ github.workspace }}
+        run: python scripts/upload_to_r2.py
+
+      - name: Trigger Render redeploy
+        run: |
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
