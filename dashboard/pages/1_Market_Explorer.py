@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import plotly.express as px
 import sys
+import time
 from pathlib import Path
 from datetime import date as dt
 
@@ -21,35 +22,53 @@ st.divider()
 
 
 def fetch_expiries(symbol: str, trade_date: str) -> list[str]:
-    try:
-        r = requests.get(f"{API_BASE}/chain/expiries/{symbol}/{trade_date}", timeout=10)
-        if r.status_code == 200:
-            return r.json().get("expiries", [])
-        return []
-    except Exception:
-        return []
+    for attempt in range(3):
+        try:
+            r = requests.get(
+                f"{API_BASE}/chain/expiries/{symbol}/{trade_date}",
+                timeout=30,
+            )
+            if r.status_code == 200:
+                return r.json().get("expiries", [])
+            return []
+        except Exception:
+            if attempt < 2:
+                time.sleep(3)
+                continue
+            return []
 
 
 def fetch_chain(symbol: str, trade_date: str, expiry_date: str) -> dict | None:
-    try:
-        r = requests.get(f"{API_BASE}/chain/{symbol}/{trade_date}/{expiry_date}", timeout=15)
-        if r.status_code == 200:
-            return r.json()
-        st.error(f"API error {r.status_code}: {r.json().get('detail', 'Unknown error')}")
-        return None
-    except Exception as e:
-        st.error(f"Connection error: {e}")
-        return None
+    for attempt in range(3):
+        try:
+            r = requests.get(
+                f"{API_BASE}/chain/{symbol}/{trade_date}/{expiry_date}",
+                timeout=60,
+            )
+            if r.status_code == 200:
+                return r.json()
+            st.error(f"API error {r.status_code}: {r.json().get('detail', 'Unknown error')}")
+            return None
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(3)
+                continue
+            st.error(f"Connection error after 3 attempts: {e}")
+            return None
 
 
 def fetch_vix(trade_date: str) -> float | None:
-    try:
-        r = requests.get(f"{API_BASE}/vix/{trade_date}", timeout=10)
-        if r.status_code == 200:
-            return r.json().get("close")
-        return None
-    except Exception:
-        return None
+    for attempt in range(3):
+        try:
+            r = requests.get(f"{API_BASE}/vix/{trade_date}", timeout=30)
+            if r.status_code == 200:
+                return r.json().get("close")
+            return None
+        except Exception:
+            if attempt < 2:
+                time.sleep(3)
+                continue
+            return None
 
 
 def render_results(symbol: str, trade_date_str: str, expiry_date_str: str):
@@ -135,7 +154,7 @@ def render_results(symbol: str, trade_date_str: str, expiry_date_str: str):
 with st.sidebar:
     st.header("Controls")
     symbol         = st.selectbox("Index", VALID_SYMBOLS)
-    trade_date = st.date_input("Trade Date", value=get_latest_trade_date())
+    trade_date     = st.date_input("Trade Date", value=get_latest_trade_date())
     trade_date_str = str(trade_date)
 
     expiries = fetch_expiries(symbol, trade_date_str)
@@ -161,11 +180,11 @@ if load:
     with st.spinner("Loading option chain..."):
         data = fetch_chain(symbol, trade_date_str, expiry_date_str)
         vix  = fetch_vix(trade_date_str)
-    st.session_state["me_chain_data"]    = data
-    st.session_state["me_vix"]           = vix
-    st.session_state["me_symbol"]        = symbol
-    st.session_state["me_trade_date"]    = trade_date_str
-    st.session_state["me_expiry_date"]   = expiry_date_str
+    st.session_state["me_chain_data"]  = data
+    st.session_state["me_vix"]         = vix
+    st.session_state["me_symbol"]      = symbol
+    st.session_state["me_trade_date"]  = trade_date_str
+    st.session_state["me_expiry_date"] = expiry_date_str
 
 
 # ── Render from session state ──
