@@ -1,6 +1,3 @@
-
-pip install duckdb
-duckdb>=0.10.0
 fastapi
 uvicorn[standard]
 duckdb
@@ -12,41 +9,4 @@ python-multipart
 streamlit
 requests
 plotly
-
-
-render.yml
-services:
-  - type: web
-    name: qrl-fastapi
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 8000
-    disk:
-      name: qrl-data
-      mountPath: /data
-      sizeGB: 10
-    envVars:
-      - key: QRL_BASE_DIR
-        value: /data
-
-  - type: web
-    name: qrl-streamlit
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run dashboard/app.py --server.port 8501 --server.address 0.0.0.0
-    envVars:
-      - key: QRL_API_BASE
-        value: https://qrl-fastapi.onrender.com
-
-  - type: cron
-    name: qrl-daily-pipeline
-    runtime: python
-    schedule: "30 13 * * 1-5"
-    buildCommand: pip install -r requirements.txt
-    startCommand: python -m scripts.run_daily_fetch
-    disk:
-      name: qrl-data
-      mountPath: /data
-    envVars:
-      - key: QRL_BASE_DIR
-        value: /data
+pyarrow
