@@ -1,4 +1,5 @@
 import logging
+import os
 from functools import lru_cache
 from pathlib import Path
 import duckdb
@@ -12,7 +13,12 @@ logger = logging.getLogger("app.dependencies")
 
 @lru_cache(maxsize=1)
 def get_db() -> duckdb.DuckDBPyConnection:
-    base_dir = Path(__file__).resolve().parent.parent
+    base_dir = Path(
+        os.environ.get(
+            "QRL_BASE_DIR",
+            Path(__file__).resolve().parent.parent
+        )
+    )
     config = FetchConfig(base_dir=base_dir)
 
     db_conn = DuckDBConnection(db_path=config.duckdb_path)
