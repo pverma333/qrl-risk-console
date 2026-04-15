@@ -7,35 +7,54 @@ cd /Users/priyamverma/Documents/GitHub/qrl-risk-console
 LOG=""
 STATUS="SUCCESS"
 DATE=$(date)
+LOG_FILE="/Users/priyamverma/Documents/GitHub/qrl-risk-console/logs/data_pipeline_fetch.log"
 
 log() {
     echo "$1"
-    LOG="$LOG\n$1"
+    LOG="$LOG
+$1"
 }
 
 send_email() {
     SUBJECT="QRL Daily Sync — $STATUS — $DATE"
-    BODY="QRL Risk Console Daily Pipeline Report\n"
-    BODY="$BODY=====================================\n"
-    BODY="$BODY Date: $DATE\n"
-    BODY="$BODY Status: $STATUS\n\n"
-    BODY="$BODY$LOG"
 
-    python3 -c "
+    PIPELINE_LOG=""
+    if [ -f "$LOG_FILE" ]; then
+        PIPELINE_LOG=$(tail -100 "$LOG_FILE")
+    fi
+
+    python3 << PYEOF
 import smtplib
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import os
 
-msg = MIMEText('$BODY')
-msg['Subject'] = '$SUBJECT'
+summary = """$LOG"""
+pipeline_log = """$PIPELINE_LOG"""
+
+body = f"""QRL Risk Console Daily Pipeline Report
+=====================================
+Date: $DATE
+Status: $STATUS
+
+--- SUMMARY ---
+{summary}
+
+--- PIPELINE LOG (last 100 lines) ---
+{pipeline_log}
+"""
+
+msg = MIMEMultipart()
+msg['Subject'] = "$SUBJECT"
 msg['From'] = os.environ.get('NOTIFY_EMAIL')
 msg['To'] = os.environ.get('NOTIFY_EMAIL')
+msg.attach(MIMEText(body, 'plain'))
 
 with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
     server.login(os.environ.get('NOTIFY_EMAIL'), os.environ.get('NOTIFY_PASSWORD'))
     server.send_message(msg)
 print('Email sent.')
-"
+PYEOF
 }
 
 log "=== Stopping local uvicorn if running $DATE ==="
