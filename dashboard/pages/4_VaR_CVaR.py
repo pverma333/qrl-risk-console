@@ -18,7 +18,11 @@ def get_latest_trade_date():
 
 st.set_page_config(page_title="VaR / CVaR", layout="wide")
 st.title("VaR / CVaR")
-st.caption("Historical simulation VaR and CVaR across 252 trading day scenarios.")
+st.caption(
+    "Historical simulation: each of the past N trading days' actual NIFTY spot returns is applied to your portfolio. "
+    "VaR is the loss not exceeded on X% of those days. CVaR is the average loss on the days that breach VaR. "
+    "Vol and rate are held constant — this is a spot-return-driven simulation."
+)
 st.divider()
 
 
@@ -62,13 +66,37 @@ def render_results():
     meta        = st.session_state.get("var_meta", {})
 
     st.subheader("VaR / CVaR Summary")
+    st.caption(
+        "VaR and CVaR are reported as positive loss magnitudes. "
+        "VaR 95% = the loss exceeded only on the worst 5% of historical days. "
+        "CVaR 95% = average loss on those worst 5% of days (also called Expected Shortfall)."
+    )
     col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Scenarios", var_summary.get("scenario_count", len(scenarios)))
-    col2.metric("VaR 95%",   f"₹{var_summary.get('var_95', 0):,.0f}")
-    col3.metric("VaR 99%",   f"₹{var_summary.get('var_99', 0):,.0f}")
-    col4.metric("CVaR 95%",  f"₹{var_summary.get('cvar_95', 0):,.0f}")
-    col5.metric("CVaR 99%",  f"₹{var_summary.get('cvar_99', 0):,.0f}")
-    st.caption("VaR and CVaR are reported as positive loss magnitudes. VaR 95% = loss not exceeded on 95% of historical days.")
+    col1.metric(
+        "Scenarios",
+        var_summary.get("scenario_count", len(scenarios)),
+        help="Number of historical trading days used in the simulation.",
+    )
+    col2.metric(
+        "VaR 95%",
+        f"₹{var_summary.get('var_95', 0):,.0f}",
+        help="Loss not exceeded on 95% of historical days. Breached on ~13 days out of 252.",
+    )
+    col3.metric(
+        "VaR 99%",
+        f"₹{var_summary.get('var_99', 0):,.0f}",
+        help="Loss not exceeded on 99% of historical days. Breached on ~3 days out of 252.",
+    )
+    col4.metric(
+        "CVaR 95%",
+        f"₹{var_summary.get('cvar_95', 0):,.0f}",
+        help="Average loss on the worst 5% of days. Always greater than VaR 95%.",
+    )
+    col5.metric(
+        "CVaR 99%",
+        f"₹{var_summary.get('cvar_99', 0):,.0f}",
+        help="Average loss on the worst 1% of days. This is the tail risk figure.",
+    )
 
     st.divider()
 
@@ -85,16 +113,23 @@ def render_results():
             f"₹{worst.get('portfolio_pnl', 0):,.0f}",
             delta=f"{worst.get('spot_return_pct', 0):.2f}% spot",
             delta_color="inverse",
+            help="The single worst portfolio PnL day in the lookback window.",
         )
         bcol.metric(
             f"Best Day — {best.get('date', '')}",
             f"₹{best.get('portfolio_pnl', 0):,.0f}",
             delta=f"{best.get('spot_return_pct', 0):.2f}% spot",
+            help="The single best portfolio PnL day in the lookback window.",
         )
 
         st.divider()
 
         st.subheader("PnL Distribution")
+        st.caption(
+            "Each bar represents the number of historical days that produced that PnL range. "
+            "Vertical lines show VaR and CVaR thresholds. "
+            "Losses are on the left (negative PnL); gains on the right."
+        )
         pnl_values = scenario_df["portfolio_pnl"].tolist()
         var_95  = -var_summary.get("var_95",  0)
         var_99  = -var_summary.get("var_99",  0)
@@ -118,7 +153,7 @@ def render_results():
             )
 
         fig.update_layout(
-            xaxis_title="Portfolio PnL (₹)", yaxis_title="Frequency",
+            xaxis_title="Portfolio PnL (₹)", yaxis_title="Number of Days",
             height=400, margin=dict(l=40, r=40, t=40, b=40),
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
             font=dict(color="#FAFAFA"),
@@ -130,6 +165,7 @@ def render_results():
         st.divider()
 
         st.subheader("Scenario Detail")
+        st.caption("All historical scenarios ranked by portfolio PnL (worst first). Spot Return is the daily arithmetic return of the index.")
         display_df = scenario_df[
             [c for c in ["date", "spot_return_pct", "portfolio_pnl"] if c in scenario_df.columns]
         ].copy()
@@ -185,25 +221,42 @@ def render_results():
 with st.sidebar:
     st.header("Controls")
 
-    symbol         = st.selectbox("Index", VALID_SYMBOLS)
-    trade_date     = st.date_input("Trade Date", value=get_latest_trade_date())
+    symbol = st.selectbox(
+        "Index",
+        VALID_SYMBOLS,
+        help="Index whose historical spot returns are used to stress the portfolio.",
+    )
+    trade_date = st.date_input(
+        "Trade Date",
+        value=get_latest_trade_date(),
+        help="The EOD date used to price your portfolio positions before applying historical scenarios.",
+    )
     trade_date_str = str(trade_date)
 
     lookback_days = st.slider(
         "Lookback (trading days)",
         min_value=21, max_value=252, value=252, step=21,
+        help=(
+            "Number of historical trading days to use. "
+            "21 ≈ 1 month. 63 ≈ 1 quarter. 252 ≈ 1 full year. "
+            "Longer lookback captures tail events like market crashes."
+        ),
     )
 
     st.subheader("Portfolio Upload")
-    uploaded_file = st.file_uploader("Upload positions CSV", type=["csv"])
+    uploaded_file = st.file_uploader(
+        "Upload positions CSV",
+        type=["csv"],
+        help="Same format as Portfolio Risk page. Each row is one position.",
+    )
 
     run = st.button("Compute VaR / CVaR", type="primary", use_container_width=True)
 
     st.divider()
     st.subheader("Audit Panel")
-    st.caption("Method: Historical simulation")
+    st.caption("Method: Historical simulation (non-parametric)")
     st.caption("Return type: Arithmetic spot returns")
-    st.caption("Vol and rate: Held constant (spot-only VaR)")
+    st.caption("Vol and rate: Held constant across scenarios")
     st.caption(f"Symbol: {symbol}")
     st.caption(f"Trade date: {trade_date_str}")
     st.caption(f"Lookback: {lookback_days} trading days")
@@ -217,6 +270,7 @@ with st.sidebar:
         "NIFTY,2026-03-30,0,XX,1,2026-03-10,22150.00",
         language="text",
     )
+    st.caption("quantity: positive = long, negative = short. option_type: CE / PE / XX (futures).")
 
 
 # ── Run on button click ──
