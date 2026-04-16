@@ -22,7 +22,7 @@ container_height = 200
 with col1:
     with st.container(height=container_height):
         st.subheader("Market Explorer")
-        st.write("Analyze NIFTY/BANKNIFTY chains. View settlement prices, IV, and Greeks. Includes IV smile and delta charts.")
+        st.write("Analyze Index chains. View settlement prices, IV, and Greeks. Includes IV smile and delta charts.")
     st.page_link("pages/1_Market_Explorer.py", label="→ Open Market Explorer", use_container_width=False)
 
 with col2:
