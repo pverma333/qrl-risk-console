@@ -9,6 +9,21 @@ st.set_page_config(
     layout="wide",
 )
 
+# Rename sidebar label from "app" to "Home"
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebarNav"] li:first-child a span {
+        display: none;
+    }
+    [data-testid="stSidebarNav"] li:first-child a::before {
+        content: "Home";
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # --- Header ---
 st.title("QRL Console")
 st.markdown("#### Institutional Risk Engine for Indian Index Derivatives")
