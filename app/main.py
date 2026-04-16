@@ -32,5 +32,5 @@ uvicorn app.main:app --reload
 #launch dashboard
 """
 cd /Users/priyamverma/Documents/GitHub/qrl-risk-console
-streamlit run dashboard/app.py
+streamlit run dashboard/Home.py
 """
