@@ -1,6 +1,6 @@
 import logging
 from fastapi import FastAPI
-from app.routers import chain, vix, scenario, portfolio, var
+from app.routers import chain, vix, scenario, portfolio, var, market
 
 logging.basicConfig(level=logging.INFO)
 
@@ -15,6 +15,7 @@ app.include_router(vix.router)
 app.include_router(scenario.router)
 app.include_router(portfolio.router)
 app.include_router(var.router)
+app.include_router(market.router)
 
 @app.get("/health")
 def health():
