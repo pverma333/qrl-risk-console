@@ -81,12 +81,6 @@ if latest_date:
             chart_pivot = chart_df.pivot(index='date', columns='symbol', values='close')
 
         def make_sparkline(symbol: str, series: pd.Series, color: str) -> go.Figure:
-            """
-            Compact plotly sparkline for a single index.
-            Y-axis range is tight to data so movement is visible.
-            X-axis shows abbreviated month labels only.
-            Hover shows exact date and value.
-            """
             y_min = series.min()
             y_max = series.max()
             y_pad = (y_max - y_min) * 0.10
@@ -183,23 +177,17 @@ if latest_date:
             symbol = idx['symbol']
             color = index_colors.get(symbol, 'rgb(200, 200, 200)')
 
-            if idx['change'] > 0:
-                arrow = "▲"
-            elif idx['change'] < 0:
-                arrow = "▼"
-            else:
-                arrow = "→"
-
-            change_str = f"{arrow} {abs(idx['change']):,.2f} ({idx['change_pct']:+.2f}%)"
-
             metric_col, chart_col = st.columns([1, 3])
 
             with metric_col:
                 st.markdown("<div style='padding-top: 16px;'>", unsafe_allow_html=True)
+                # Pass numeric-leading delta string so Streamlit reads sign correctly
+                # f"{change:+,.2f}" produces "-34.55" or "+388.65"
+                # Streamlit checks for leading "-" to apply red color
                 st.metric(
                     label=idx['display_name'],
                     value=f"₹{idx['close']:,.2f}",
-                    delta=change_str
+                    delta=f"{idx['change']:+,.2f} ({idx['change_pct']:+.2f}%)"
                 )
                 st.caption(
                     f"O: {idx['open']:,.2f}   "
