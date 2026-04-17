@@ -25,7 +25,7 @@ st.markdown(
 )
 
 # --- Header ---
-st.title("QRL Console")
+st.title("Quant Risk Lab Console")
 st.markdown("#### Institutional Risk Engine for Indian Index Derivatives")
 st.markdown("*EOD Analytics • Black-Scholes Pricing • Historical VaR Simulation*")
 st.divider()
@@ -189,11 +189,7 @@ if latest_date:
                     value=f"₹{idx['close']:,.2f}",
                     delta=f"{idx['change']:+,.2f} ({idx['change_pct']:+.2f}%)"
                 )
-                st.caption(
-                    f"O: {idx['open']:,.2f}   "
-                    f"H: {idx['high']:,.2f}   "
-                    f"L: {idx['low']:,.2f}"
-                )
+                st.caption(f"O: {idx['open']:,.2f} | H: {idx['high']:,.2f} | L: {idx['low']:,.2f}")
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with chart_col:
