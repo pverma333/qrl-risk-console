@@ -62,9 +62,9 @@ def get_market_summary(conn: duckdb.DuckDBPyConnection, trade_date: date) -> Dic
     # 3) Build index list with change
     symbol_map = {
         'NIFTY': 'Nifty 50',
-        'BANKNIFTY': 'Bank Nifty',
-        'FINNIFTY': 'Fin Nifty',
-        'MIDCPNIFTY': 'Midcap Nifty'
+        'BANKNIFTY': 'Nifty Bank',
+        'FINNIFTY': 'Nifty Financial Services',
+        'MIDCPNIFTY': 'Nifty Midcap Select'
     }
 
     indices = []
