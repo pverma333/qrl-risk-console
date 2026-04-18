@@ -119,7 +119,7 @@ def render_results():
 
     if "strike" in pos_df.columns:
         pos_df["strike"] = pos_df["strike"].apply(
-            lambda x: int(x) if pd.notna(x) and float(x) != 0 else x
+            lambda x: f"{float(x):.2f}" if pd.notna(x) and float(x) != 0 else x
         )
 
     display_cols = ["symbol", "expiry_date", "strike", "option_type",
