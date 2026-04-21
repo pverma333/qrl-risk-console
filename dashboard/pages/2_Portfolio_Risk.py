@@ -1,3 +1,4 @@
+import io
 import streamlit as st
 import requests
 import pandas as pd
@@ -7,8 +8,8 @@ from datetime import date
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents))
-from config import API_BASE, VALID_SYMBOLS, SHOCK_DEFAULTS
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from config import API_BASE, VALID_SYMBOLS, SHOCK_DEFAULTS, fetch_market_summary
 
 @st.cache_data(ttl=3600)
 def get_latest_trade_date():
@@ -36,6 +37,7 @@ POSITION_COLUMN_LABELS = {
     "scenario_pnl":  "Scenario PnL",
     "status":        "Status",
 }
+
 
 def call_portfolio_api(
     trade_date: str,
@@ -68,6 +70,51 @@ def call_portfolio_api(
             st.error(f"Connection error after 3 attempts: {e}")
             return None
 
+
+def render_market_context(trade_date_str: str, portfolio_symbols: list[str]):
+    """
+    Fetch and display spot close for portfolio symbols and India VIX
+    for the selected trade date. Uses existing /market/summary endpoint.
+    """
+    market_data = fetch_market_summary(trade_date_str)
+    if not market_data:
+        return
+
+    # Filter indices to only symbols present in the portfolio
+    relevant_indices = [
+        idx for idx in market_data['indices']
+        if idx['symbol'] in portfolio_symbols
+    ]
+
+    if not relevant_indices and market_data['vix']['value'] is None:
+        return
+
+    st.subheader("Market Context")
+    st.caption(f"Spot and volatility data for {trade_date_str}")
+
+    # Build columns: one per relevant index + one for VIX
+    n_cols = len(relevant_indices) + 1
+    cols = st.columns(n_cols)
+
+    for i, idx in enumerate(relevant_indices):
+        with cols[i]:
+            st.metric(
+                label=f"{idx['display_name']} Spot",
+                value=f"₹{idx['close']:,.2f}",
+                delta=f"{idx['change']:+,.2f} ({idx['change_pct']:+.2f}%)"
+            )
+
+    # VIX always in last column
+    with cols[-1]:
+        vix_val = market_data['vix']['value']
+        st.metric(
+            label="India VIX",
+            value=f"{vix_val:.2f}" if vix_val is not None else "N/A"
+        )
+
+    st.divider()
+
+
 def render_results():
     result = st.session_state.get("pr_result")
     if result is None:
@@ -76,6 +123,12 @@ def render_results():
     meta      = st.session_state.get("pr_meta", {})
     summary   = result.get("summary", {})
     positions = result.get("positions", [])
+
+    # Extract unique symbols from positions for market context filter
+    portfolio_symbols = list({p['symbol'] for p in positions})
+
+    # --- Market Context: spot + VIX for trade date ---
+    render_market_context(meta.get("trade_date", ""), portfolio_symbols)
 
     st.subheader("Performance Summary")
     col1, col2, col3, col4 = st.columns(4)
@@ -148,13 +201,18 @@ def render_results():
             return ["background-color: #fff3cd"] * len(row)
         return [""] * len(row)
 
-    st.dataframe(pos_display.style.apply(highlight_no_data, axis=1), use_container_width=True, hide_index=True)
+    st.dataframe(
+        pos_display.style.apply(highlight_no_data, axis=1),
+        use_container_width=True,
+        hide_index=True
+    )
 
     if "status" in pos_df.columns:
-        no_data_count = pos_df[pos_df["status"] == "no_data"].shape
+        no_data_count = pos_df[pos_df["status"] == "no_data"].shape[0]
         if no_data_count > 0:
             st.warning(
-                f"{no_data_count} contract(s) not found for the selected date. Check strike and expiry."
+                f"{no_data_count} contract(s) not found for the selected date. "
+                f"Check strike and expiry."
             )
 
     st.divider()
@@ -191,6 +249,7 @@ def render_results():
             mime="application/json",
             use_container_width=True,
         )
+
 
 with st.sidebar:
     st.header("Risk Controls")
