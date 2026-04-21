@@ -8,7 +8,6 @@ from datetime import date, timedelta
 from jugaad_data.nse import bhavcopy_fo_save
 from src.core.fetch_config import FetchConfig
 
-
 class DerivativesFetcher:
 
     SWITCH_DATE = date(2024, 6, 30)
