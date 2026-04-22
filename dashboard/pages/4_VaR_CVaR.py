@@ -73,7 +73,7 @@ def render_results():
     )
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric(
-        "Scenarios",
+        "Lookback Period (days)",
         var_summary.get("scenario_count", len(scenarios)),
         help="Number of historical trading days used in the simulation.",
     )

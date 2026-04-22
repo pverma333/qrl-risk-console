@@ -35,4 +35,5 @@ class ChainResponse(BaseModel):
     expiry_date: date
     row_count: int
     iv_computed_count: int
+    iv_avg: float | None = None
     rows: list[ChainRow]
