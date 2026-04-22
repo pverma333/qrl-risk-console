@@ -37,10 +37,14 @@ def get_option_chain(
             expiry_date=expiry_date,
             row_count=0,
             iv_computed_count=0,
+            iv_avg=0,
             rows=[],
         )
 
     iv_computed = int(df["iv"].notna().sum())
+    iv_values = df[df["iv"].notna()]["iv"].values
+    iv_avg = float(iv_values.mean()) if len(iv_values) > 0 else None
+
     rows = [ChainRow(**row) for row in df.to_dict(orient="records")]
 
     return ChainResponse(
@@ -49,5 +53,6 @@ def get_option_chain(
         expiry_date=expiry_date,
         row_count=len(rows),
         iv_computed_count=iv_computed,
+        iv_avg=iv_avg,
         rows=rows,
     )

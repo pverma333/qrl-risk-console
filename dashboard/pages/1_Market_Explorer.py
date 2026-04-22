@@ -96,7 +96,10 @@ def render_results(symbol: str, trade_date_str: str, expiry_date_str: str):
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Symbol",      symbol)
     col2.metric("Rows",        data["row_count"])
-    col3.metric("Implied Volatility (IV)", data["iv_computed_count"])
+
+    iv_display = f"{data.get('iv_avg', 0):.2f}" if data.get('iv_avg') else "N/A"
+    col3.metric("Chain IV (%)", iv_display)
+
     col4.metric("India VIX",   f"{vix:.2f}" if vix else "N/A")
 
     st.divider()
