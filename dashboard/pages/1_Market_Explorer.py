@@ -109,7 +109,7 @@ def render_results(symbol: str, trade_date_str: str, expiry_date_str: str):
     df["expiry_date"] = pd.to_datetime(df["expiry_date"]).dt.date
 
     # Cast strike to int — removes trailing decimal zeros
-    df["strike"] = df["strike"].astype(int)
+    df["strike"] = df["strike"].apply(lambda x: int(x) if pd.notna(x) else None)
 
     ce_df = df[df["option_type"] == "CE"].copy()
     pe_df = df[df["option_type"] == "PE"].copy()
