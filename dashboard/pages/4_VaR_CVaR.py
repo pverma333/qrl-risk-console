@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import API_BASE, VALID_SYMBOLS
+from components.position_builder import render_position_builder, resolve_csv_input
 
 @st.cache_data(ttl=3600)
 def get_latest_trade_date():
@@ -80,22 +81,22 @@ def render_results():
     col2.metric(
         "VaR 95%",
         f"₹{var_summary.get('var_95', 0):,.0f}",
-        help="Loss not exceeded on 95% of historical days. Breached on ~13 days out of 252.",
+        help="Loss not exceeded on 95% of historical days.",
     )
     col3.metric(
         "VaR 99%",
         f"₹{var_summary.get('var_99', 0):,.0f}",
-        help="Loss not exceeded on 99% of historical days. Breached on ~3 days out of 252.",
+        help="Loss not exceeded on 99% of historical days.",
     )
     col4.metric(
         "CVaR 95%",
         f"₹{var_summary.get('cvar_95', 0):,.0f}",
-        help="Average loss on the worst 5% of days. Always greater than VaR 95%.",
+        help="Average loss on the worst 5% of days.",
     )
     col5.metric(
         "CVaR 99%",
         f"₹{var_summary.get('cvar_99', 0):,.0f}",
-        help="Average loss on the worst 1% of days. This is the tail risk figure.",
+        help="Average loss on the worst 1% of days.",
     )
 
     st.divider()
@@ -112,14 +113,12 @@ def render_results():
             f"Worst Day — {worst.get('date', '')}",
             f"₹{worst.get('portfolio_pnl', 0):,.0f}",
             delta=f"{worst.get('spot_return_pct', 0):.2f}% spot",
-            delta_color="inverse",
-            help="The single worst portfolio PnL day in the lookback window.",
+            delta_color="normal",
         )
         bcol.metric(
             f"Best Day — {best.get('date', '')}",
             f"₹{best.get('portfolio_pnl', 0):,.0f}",
             delta=f"{best.get('spot_return_pct', 0):.2f}% spot",
-            help="The single best portfolio PnL day in the lookback window.",
         )
 
         st.divider()
@@ -127,8 +126,7 @@ def render_results():
         st.subheader("PnL Distribution")
         st.caption(
             "Each bar represents the number of historical days that produced that PnL range. "
-            "Vertical lines show VaR and CVaR thresholds. "
-            "Losses are on the left (negative PnL); gains on the right."
+            "Vertical lines show VaR and CVaR thresholds."
         )
         pnl_values = scenario_df["portfolio_pnl"].tolist()
         var_95  = -var_summary.get("var_95",  0)
@@ -165,7 +163,7 @@ def render_results():
         st.divider()
 
         st.subheader("Scenario Detail")
-        st.caption("All historical scenarios ranked by portfolio PnL (worst first). Spot Return is the daily arithmetic return of the index.")
+        st.caption("All historical scenarios ranked by portfolio PnL (worst first).")
         display_df = scenario_df[
             [c for c in ["date", "spot_return_pct", "portfolio_pnl"] if c in scenario_df.columns]
         ].copy()
@@ -238,17 +236,15 @@ with st.sidebar:
         min_value=21, max_value=252, value=252, step=21,
         help=(
             "Number of historical trading days to use. "
-            "21 ≈ 1 month. 63 ≈ 1 quarter. 252 ≈ 1 full year. "
-            "Longer lookback captures tail events like market crashes."
+            "21 ≈ 1 month. 63 ≈ 1 quarter. 252 ≈ 1 full year."
         ),
     )
 
     st.subheader("Portfolio Upload")
-    uploaded_file = st.file_uploader(
-        "Upload positions CSV",
-        type=["csv"],
-        help="Same format as Portfolio Risk page. Each row is one position.",
-    )
+    st.caption("Upload a CSV, enter positions manually, or both — rows will be combined.")
+
+    # Tabbed input interface handled by render_position_builder
+    render_position_builder("var")
 
     run = st.button("Compute VaR / CVaR", type="primary", use_container_width=True)
 
@@ -275,13 +271,20 @@ with st.sidebar:
 
 # ── Run on button click ──
 if run:
-    if uploaded_file is None:
-        st.warning("Upload a portfolio CSV first.")
+    uploaded_file_obj = st.session_state.get(f"var_file_uploader")
+    uploaded_bytes    = uploaded_file_obj.getvalue() if uploaded_file_obj is not None else None
+
+    # resolve_csv_input merges uploaded + manual if both present,
+    # validates schema of each source before merging.
+    final_bytes, source_label, errors = resolve_csv_input("var", uploaded_bytes)
+
+    if errors:
+        for err in errors:
+            st.error(err)
         st.stop()
 
-    csv_bytes = uploaded_file.read()
-    with st.spinner(f"Running {lookback_days}-scenario historical simulation..."):
-        result = call_var_api(symbol, trade_date_str, lookback_days, csv_bytes)
+    with st.spinner(f"Running {lookback_days}-scenario historical simulation ({source_label})..."):
+        result = call_var_api(symbol, trade_date_str, lookback_days, final_bytes)
 
     if result is not None:
         st.session_state["var_result"] = result
