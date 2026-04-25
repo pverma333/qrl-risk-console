@@ -1,7 +1,6 @@
 import numpy as np
 from typing import Tuple
 
-
 IV_INIT      = 0.20
 IV_LOWER     = 0.001
 IV_UPPER     = 5.00
@@ -10,24 +9,15 @@ MAX_ITER_BIS = 100
 TOLERANCE    = 1e-6
 VEGA_FLOOR   = 1e-10
 
-
 def _norm_cdf(x: np.ndarray) -> np.ndarray:
     from math import erf
-    return 0.5 * (1.0 + np.array(
-        [erf(float(v) / np.sqrt(2.0)) for v in x.flat],
-        dtype=np.float64
-    ).reshape(x.shape))
-
+    return 0.5 * (1.0 + np.array([erf(float(v) / np.sqrt(2.0)) for v in x.flat],dtype=np.float64).reshape(x.shape))
 
 def _norm_pdf(x: np.ndarray) -> np.ndarray:
     return np.exp(-0.5 * x * x) / np.sqrt(2.0 * np.pi)
 
 
-def _bs_price_vec(
-    S: np.ndarray, K: np.ndarray, T: np.ndarray,
-    r: np.ndarray, q: np.ndarray, sigma: np.ndarray,
-    is_call: np.ndarray
-) -> np.ndarray:
+def _bs_price_vec(S: np.ndarray, K: np.ndarray, T: np.ndarray, r: np.ndarray, q: np.ndarray, sigma: np.ndarray,is_call: np.ndarray) -> np.ndarray:
     safe_T     = np.maximum(T,     1e-10)
     safe_sigma = np.maximum(sigma, 1e-10)
     sqrt_T = np.sqrt(safe_T)
@@ -35,21 +25,12 @@ def _bs_price_vec(
     d1 = (np.log(S / K) + (r - q + 0.5 * safe_sigma ** 2) * safe_T) / (safe_sigma * sqrt_T)
     d2 = d1 - safe_sigma * sqrt_T
 
-    call_price = (
-        S * np.exp(-q * safe_T) * _norm_cdf(d1)
-        - K * np.exp(-r * safe_T) * _norm_cdf(d2)
-    )
-    put_price = (
-        K * np.exp(-r * safe_T) * _norm_cdf(-d2)
-        - S * np.exp(-q * safe_T) * _norm_cdf(-d1)
-    )
+    call_price = (S * np.exp(-q * safe_T) * _norm_cdf(d1) - K * np.exp(-r * safe_T) * _norm_cdf(d2))
+    put_price = (K * np.exp(-r * safe_T) * _norm_cdf(-d2) - S * np.exp(-q * safe_T) * _norm_cdf(-d1))
     return np.where(is_call, call_price, put_price)
 
 
-def _vega_vec(
-    S: np.ndarray, K: np.ndarray, T: np.ndarray,
-    r: np.ndarray, q: np.ndarray, sigma: np.ndarray
-) -> np.ndarray:
+def _vega_vec(S: np.ndarray, K: np.ndarray, T: np.ndarray, r: np.ndarray, q: np.ndarray, sigma: np.ndarray) -> np.ndarray:
     safe_T     = np.maximum(T,     1e-10)
     safe_sigma = np.maximum(sigma, 1e-10)
     sqrt_T = np.sqrt(safe_T)
@@ -58,11 +39,7 @@ def _vega_vec(
     return S * np.exp(-q * safe_T) * _norm_pdf(d1) * sqrt_T
 
 
-def _greeks_vec(
-    S: np.ndarray, K: np.ndarray, T: np.ndarray,
-    r: np.ndarray, q: np.ndarray, sigma: np.ndarray,
-    is_call: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def _greeks_vec(S: np.ndarray, K: np.ndarray, T: np.ndarray, r: np.ndarray, q: np.ndarray, sigma: np.ndarray, is_call: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     safe_T     = np.maximum(T,     1e-10)
     safe_sigma = np.maximum(sigma, 1e-10)
     sqrt_T = np.sqrt(safe_T)
@@ -99,14 +76,7 @@ def _greeks_vec(
 
     return delta, gamma, vega, theta, rho
 
-
-def _invert_iv_vec(
-    market_price: np.ndarray,
-    S: np.ndarray, K: np.ndarray, T: np.ndarray,
-    r: np.ndarray, q: np.ndarray,
-    is_call: np.ndarray,
-    valid_mask: np.ndarray
-) -> np.ndarray:
+def _invert_iv_vec(market_price: np.ndarray, S: np.ndarray, K: np.ndarray, T: np.ndarray, r: np.ndarray, q: np.ndarray, is_call: np.ndarray, valid_mask: np.ndarray) -> np.ndarray:
     n = len(market_price)
     iv = np.full(n, IV_INIT)
     converged = np.zeros(n, dtype=bool)
@@ -187,14 +157,7 @@ def compute_batch(df) -> dict:
     intrinsic_pe = np.maximum(fwd_K - fwd_S, 0.0)
     intrinsic    = np.where(is_call, intrinsic_ce, intrinsic_pe)
 
-    valid = (
-        (dte > 0) &
-        (settle > 0) &
-        (S > 0) &
-        (K > 0) &
-        ((opt_type == "CE") | (opt_type == "PE")) &
-        (settle >= intrinsic - TOLERANCE)
-    )
+    valid = ((dte > 0) & (settle > 0) & (S > 0) & (K > 0) & ((opt_type == "CE") | (opt_type == "PE")) & (settle >= intrinsic - TOLERANCE))
 
     iv = _invert_iv_vec(settle, S, K, T, r, q, is_call, valid)
 
