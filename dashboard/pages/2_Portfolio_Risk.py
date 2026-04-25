@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from config import API_BASE, VALID_SYMBOLS, SHOCK_DEFAULTS, fetch_market_summary
+from components.position_builder import render_position_builder, resolve_csv_input
 
 @st.cache_data(ttl=3600)
 def get_latest_trade_date():
@@ -72,15 +73,10 @@ def call_portfolio_api(
 
 
 def render_market_context(trade_date_str: str, portfolio_symbols: list[str]):
-    """
-    Fetch and display spot close for portfolio symbols and India VIX
-    for the selected trade date. Uses existing /market/summary endpoint.
-    """
     market_data = fetch_market_summary(trade_date_str)
     if not market_data:
         return
 
-    # Filter indices to only symbols present in the portfolio
     relevant_indices = [
         idx for idx in market_data['indices']
         if idx['symbol'] in portfolio_symbols
@@ -92,9 +88,8 @@ def render_market_context(trade_date_str: str, portfolio_symbols: list[str]):
     st.subheader("Market Context")
     st.caption(f"Spot and volatility data for {trade_date_str}")
 
-    # Build columns: one per relevant index + one for VIX
     n_cols = len(relevant_indices) + 1
-    cols = st.columns(n_cols)
+    cols   = st.columns(n_cols)
 
     for i, idx in enumerate(relevant_indices):
         with cols[i]:
@@ -104,7 +99,6 @@ def render_market_context(trade_date_str: str, portfolio_symbols: list[str]):
                 delta=f"{idx['change']:+,.2f} ({idx['change_pct']:+.2f}%)"
             )
 
-    # VIX always in last column
     with cols[-1]:
         vix_val = market_data['vix']['value']
         st.metric(
@@ -124,10 +118,7 @@ def render_results():
     summary   = result.get("summary", {})
     positions = result.get("positions", [])
 
-    # Extract unique symbols from positions for market context filter
     portfolio_symbols = list({p['symbol'] for p in positions})
-
-    # --- Market Context: spot + VIX for trade date ---
     render_market_context(meta.get("trade_date", ""), portfolio_symbols)
 
     st.subheader("Performance Summary")
@@ -154,11 +145,11 @@ def render_results():
     st.subheader("Net Portfolio Greeks")
     st.caption("Aggregated risk metrics weighted by quantity and lot size.")
     gcol1, gcol2, gcol3, gcol4, gcol5 = st.columns(5)
-    gcol1.metric("Delta", f"{summary.get('net_delta', 0):.2f}", help="₹ P&L per 1-pt spot move.")
-    gcol2.metric("Gamma", f"{summary.get('net_gamma', 0):.4f}", help="Delta sensitivity to spot.")
-    gcol3.metric("Vega", f"{summary.get('net_vega', 0):.2f}", help="₹ P&L per 1% move in IV.")
-    gcol4.metric("Theta", f"{summary.get('net_theta', 0):.2f}", help="Daily time decay (₹).")
-    gcol5.metric("Rho", f"{summary.get('net_rho', 0):.2f}", help="₹ P&L per 1% move in rates.")
+    gcol1.metric("Delta", f"{summary.get('net_delta', 0):.2f}",   help="₹ P&L per 1-pt spot move.")
+    gcol2.metric("Gamma", f"{summary.get('net_gamma', 0):.4f}",   help="Delta sensitivity to spot.")
+    gcol3.metric("Vega",  f"{summary.get('net_vega', 0):.2f}",    help="₹ P&L per 1% move in IV.")
+    gcol4.metric("Theta", f"{summary.get('net_theta', 0):.2f}",   help="Daily time decay (₹).")
+    gcol5.metric("Rho",   f"{summary.get('net_rho', 0):.2f}",     help="₹ P&L per 1% move in rates.")
 
     st.divider()
 
@@ -193,8 +184,7 @@ def render_results():
             )
 
     pos_display = pos_display.rename(columns=POSITION_COLUMN_LABELS)
-
-    has_status = "Status" in pos_display.columns
+    has_status  = "Status" in pos_display.columns
 
     def highlight_no_data(row):
         if has_status and row.get("Status") == "no_data":
@@ -204,7 +194,7 @@ def render_results():
     st.dataframe(
         pos_display.style.apply(highlight_no_data, axis=1),
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
     )
 
     if "status" in pos_df.columns:
@@ -251,6 +241,7 @@ def render_results():
         )
 
 
+# ── Sidebar ──
 with st.sidebar:
     st.header("Risk Controls")
 
@@ -265,37 +256,30 @@ with st.sidebar:
     st.caption("Apply shocks to model portfolio impact.")
 
     spot_shock_pct = st.slider(
-        "Spot Shock (%)",
-        -10.0, 10.0,
-        SHOCK_DEFAULTS["spot_shock_pct"], 0.5,
+        "Spot Shock (%)", -10.0, 10.0, SHOCK_DEFAULTS["spot_shock_pct"], 0.5,
         help="Percentage move in underlying spot price.",
     )
     vol_shock_abs = st.slider(
-        "Vol Shock (pts)",
-        -10.0, 10.0,
-        SHOCK_DEFAULTS["vol_shock_abs"], 0.5,
+        "Vol Shock (pts)", -10.0, 10.0, SHOCK_DEFAULTS["vol_shock_abs"], 0.5,
         help="Absolute change in implied volatility points.",
     )
     rate_shock_bps = st.slider(
-        "Rate Shock (bps)",
-        -100.0, 100.0,
-        SHOCK_DEFAULTS["rate_shock_bps"], 5.0,
+        "Rate Shock (bps)", -100.0, 100.0, SHOCK_DEFAULTS["rate_shock_bps"], 5.0,
         help="Basis point change in risk-free rate.",
     )
 
     st.subheader("Portfolio Input")
-    uploaded_file = st.file_uploader(
-        "Upload CSV",
-        type=["csv"],
-        help="Requires: symbol, expiry_date, strike, option_type, quantity, entry_date, entry_price.",
-    )
+    st.caption("Upload a CSV, enter positions manually, or both — rows will be combined.")
+
+    # Tabbed input interface handled by render_position_builder
+    render_position_builder("pr")
 
     analyze = st.button("Run Risk Analysis", type="primary", use_container_width=True)
 
     st.divider()
     st.subheader("Audit Log")
-    st.caption(f"**Model:** Black-Scholes (Act/365)")
-    st.caption(f"**Rates:** Linear G-Bond Interpolation")
+    st.caption("**Model:** Black-Scholes (Act/365)")
+    st.caption("**Rates:** Linear G-Bond Interpolation")
     st.caption(f"**Valuation Date:** {trade_date_str}")
 
     st.divider()
@@ -308,15 +292,24 @@ with st.sidebar:
         )
         st.caption("Qty: + Long, - Short | Type: CE/PE/XX (Futures)")
 
+
+# ── Run analysis ──
 if analyze:
-    if uploaded_file is None:
-        st.warning("Upload a portfolio CSV first.")
+    uploaded_file_obj = st.session_state.get(f"pr_file_uploader")
+    uploaded_bytes    = uploaded_file_obj.getvalue() if uploaded_file_obj is not None else None
+
+    # resolve_csv_input merges uploaded + manual if both present,
+    # validates schema of each source before merging.
+    final_bytes, source_label, errors = resolve_csv_input("pr", uploaded_bytes)
+
+    if errors:
+        for err in errors:
+            st.error(err)
         st.stop()
 
-    csv_bytes = uploaded_file.read()
-    with st.spinner("Calculating..."):
+    with st.spinner(f"Calculating ({source_label})..."):
         result = call_portfolio_api(
-            trade_date_str, spot_shock_pct, vol_shock_abs, rate_shock_bps, csv_bytes
+            trade_date_str, spot_shock_pct, vol_shock_abs, rate_shock_bps, final_bytes
         )
 
     if result is not None:
