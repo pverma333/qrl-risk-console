@@ -45,7 +45,7 @@ Quant Engine  (src/quant/)
 ### Four-Layer Data Architecture
 
 ```
-Raw         NSE derivatives CSV files — immutable, never modified
+Raw         NSE derivatives CSV files — immutable, never modified [Example Gbond Raw data csv file]
   |
 Ingest      7 namespaces — append-safe, dedup-enforced, trading-day validated
   |
@@ -185,7 +185,7 @@ qrl-risk-console/
 │   ├── schemas/                 Pydantic models per endpoint
 │   └── services/                DuckDB query logic per endpoint
 ├── dashboard/
-│   ├── app.py                   Home page with 4 navigation tiles
+│   ├── Home.py                   Home page with 4 navigation tiles
 │   ├── config.py                API base URL, valid symbols, shock defaults
 │   └── pages/
 │       ├── 1_Market_Explorer.py
@@ -213,7 +213,6 @@ qrl-risk-console/
 ```
 
 ---
-
 ## Running Locally
 
 **Prerequisites:** Python 3.12
@@ -224,22 +223,88 @@ cd qrl-risk-console
 pip install -r requirements.txt
 ```
 
-Set environment variables:
+Set the base directory environment variable:
 
 ```bash
 export QRL_BASE_DIR="/path/to/qrl-risk-console"
-export R2_ACCOUNT_ID="..."
-export R2_ACCESS_KEY="..."
-export R2_SECRET_KEY="..."
-export R2_BUCKET="qrl-risk-data"
 ```
 
-Download data and start:
+**Step 1 — Download government bond data manually.**
+
+This is the only manual download required. All other data is fetched automatically by the pipeline.
+
+Download historical CSV exports for your target date range from the three links below.
+On each page, select your date range and export as CSV.
+
+- 3M: https://in.investing.com/rates-bonds/india-3-month-bond-yield-historical-data
+- 6M: https://in.investing.com/rates-bonds/india-6-month-bond-yield-historical-data
+- 1Y: https://in.investing.com/rates-bonds/india-1-year-bond-yield-historical-data
+
+Rename the downloaded files exactly as shown and place them here:
+
+```
+data/ingest/gbond/3monthbond.csv
+data/ingest/gbond/6monthbond.csv
+data/ingest/gbond/1yearbond.csv
+```
+
+**Step 2 — Run the full data pipeline (first time only).**
+
+Everything else — NSE derivatives, index spot, India VIX, dividend yields — is fetched and built automatically.
 
 ```bash
-python scripts/download_from_r2.py
+python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-23 --rebuild
+python scripts/run_processed_builder.py --mode full
+python scripts/run_curated_option_chain.py --mode full
+python scripts/run_curated_futures.py --mode full
+```
+
+Monitor progress in a separate terminal:
+
+```bash
+tail -f logs/data_pipeline_fetch.log
+```
+
+For a 7-8 year data span this takes approximately 1.5 to 2 hours. On subsequent runs the pipeline appends only new data incrementally.
+
+**Step 3 — Start the application.**
+
+```bash
 uvicorn app.main:app --reload        # API at http://localhost:8000
-streamlit run dashboard/app.py       # UI  at http://localhost:8501
+streamlit run dashboard/Home.py      # UI  at http://localhost:8501
+```
+
+Open http://localhost:8501 in your browser.
+
+---
+
+**Daily data updates (after initial setup).**
+
+The DuckDB lock must be released before running the fetch. Stop the API process, fetch new data, then restart.
+
+**1 — Find and stop the running API process.**
+
+```bash
+lsof -i :8000
+```
+
+Note the PID values in the output, then kill them:
+
+```bash
+kill -9 <pid>
+```
+
+**2 — Run the daily fetch.**
+
+```bash
+python -m scripts.run_daily_fetch
+```
+
+**3 — Restart the application.**
+
+```bash
+uvicorn app.main:app --reload        # API at http://localhost:8000
+streamlit run dashboard/Home.py      # UI  at http://localhost:8501
 ```
 
 ---
