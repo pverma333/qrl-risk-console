@@ -92,3 +92,6 @@ log "Local uvicorn started. PID: $!"
 
 log "=== All steps complete $(date) ==="
 send_email
+
+#run
+#bash /Users/priyamverma/Documents/GitHub/qrl-risk-console/scripts/daily_sync.sh
