@@ -28,8 +28,8 @@ from src.data.curated_futures_builder import CuratedFuturesBuilder
 def main():
 
 
-    today = datetime(2026, 5, 25).date()
-    #today = datetime.today().date()
+    #today = datetime(2026, 5, 25).date()
+    today = datetime.today().date()
     config = FetchConfig(BASE_DIR, use_year_partition=True)
 
     # Ingest Layer
