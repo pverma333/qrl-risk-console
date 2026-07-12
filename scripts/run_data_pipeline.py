@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
 #run script
 """
-python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-23 --rebuild
+python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-07-12 --rebuild
 python -m scripts.run_data_pipeline --start 2025-12-12 --end 2026-01-12 --rebuild
 python -m scripts.run_data_pipeline --start 2025-12-12 --end 2026-02-20 --rebuild
 
@@ -103,7 +103,7 @@ python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-20 --index-
 """
 #run index yield only
 """
-python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-02-20 --yield-only
+python -m scripts.run_data_pipeline --start 2026-06-30 --end 2026-07-02 --yield-only
 """
 #run bond only
 """
@@ -115,7 +115,7 @@ python -m scripts.run_data_pipeline --lot-size-only --rebuild
 """
 #daily fetch
 """
-python -m scripts.run_data_pipeline --start ... --end ...
+python -m scripts.run_data_pipeline --start 2026-06-30 --end 2026-07-05
 
 → derivatives append
 → trade calendar merge + dedup
