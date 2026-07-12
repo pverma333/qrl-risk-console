@@ -36,9 +36,9 @@ class FetchConfig:
     yield_names: List[str] = field(
         default_factory=lambda: [
             "Nifty 50",
-            "NIFTY BANK",
-            "NIFTY FIN SERVICE",
-            "NIFTY MID SELECT",
+            "Nifty Bank",
+            "Nifty Financial Services",
+            "Nifty Midcap Select",
         ]
     )
 

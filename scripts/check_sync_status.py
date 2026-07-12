@@ -56,5 +56,5 @@ if __name__ == "__main__":
 #run
 """
 python -m scripts.check_sync_status
-python -m scripts.check_sync_status --from 2026-03-01 --to 2026-03-01
+python -m scripts.check_sync_status --from 2019-01-01 --to 2026-07-12
 """

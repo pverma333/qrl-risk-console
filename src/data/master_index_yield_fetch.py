@@ -1,8 +1,184 @@
 import pandas as pd
 import time
 import logging
+import io
+import requests
+from datetime import date, timedelta
+from src.core.fetch_config import FetchConfig
+
+
+class MasterIndexYieldFetcher:
+
+    CSV_URL = "https://archives.nseindia.com/content/indices/ind_close_all_{ddmmyyyy}.csv"
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "text/csv,*/*",
+        "Referer": "https://www.nseindia.com/",
+    }
+
+    CSV_TO_LEGACY_INDEX = {
+        "Nifty 50": "Nifty 50",
+        "Nifty Bank": "NIFTY BANK",
+        "Nifty Financial Services": "NIFTY FIN SERVICE",
+        "Nifty Midcap Select": "NIFTY MID SELECT",
+    }
+
+    def __init__(self, config: FetchConfig, max_retries: int = 3, save_interval: int = 20, delay: float = 0.15, rebuild: bool = False):
+        self.config = config
+        self.log_path = config.logs_dir
+        self.namespace = "index_yield"
+
+        self.indices = config.yield_names  # CSV names, e.g. "Nifty Bank"
+        self.max_retries = max_retries
+        self.save_interval = save_interval
+        self.delay = delay
+        self.rebuild = rebuild
+
+        logging.basicConfig(
+            filename=self.log_path / "data_pipeline_fetch.log",
+            level=logging.INFO,
+            format="%(asctime)s | %(name)s | %(levelname)s | %(message)s"
+        )
+        self.logger = logging.getLogger("IndexYieldFetcher")
+
+    def fetch_snapshot(self, target_date: date):
+        url = self.CSV_URL.format(ddmmyyyy=target_date.strftime("%d%m%Y"))
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                resp = requests.get(url, headers=self.HEADERS, timeout=15)
+                if resp.status_code == 404:
+                    self.logger.warning(
+                        f"No CSV available for {target_date} (holiday/non-trading day)."
+                    )
+                    return None
+                resp.raise_for_status()
+
+                first_line = resp.text.splitlines()[0] if resp.text else ""
+                if not first_line.lower().startswith("index name"):
+                    raise ValueError(
+                        f"Unexpected response (not CSV): {first_line[:80]}"
+                    )
+
+                df = pd.read_csv(io.StringIO(resp.text))
+                df.columns = [c.strip() for c in df.columns]
+
+                sub = df[df["Index Name"].isin(self.indices)].copy()
+                if sub.empty:
+                    self.logger.warning(
+                        f"Target indices missing in CSV for {target_date}"
+                    )
+                    return None
+                if len(sub) < len(self.indices):
+                    missing = set(self.indices) - set(sub["Index Name"])
+                    self.logger.warning(
+                        f"Partial match for {target_date}. Missing: {missing}"
+                    )
+
+                result = pd.DataFrame({
+                    "DIVYIELD": pd.to_numeric(sub["Div Yield"], errors="coerce"),
+                    "DATE": target_date.strftime("%Y-%m-%d"),
+                    "INDEX": sub["Index Name"].map(self.CSV_TO_LEGACY_INDEX).values,
+                }).reset_index(drop=True)
+
+                self.logger.info(
+                    f"Fetched yield for {len(result)} indices on {target_date}"
+                )
+                return result
+            except Exception as e:
+                self.logger.error(
+                    f"Attempt {attempt} failed for {target_date}: {e}"
+                )
+                time.sleep(2 ** attempt)
+        self.logger.error(f"Failed after retries: {target_date}")
+        return None
+
+    # Runner
+    def run(self, start_date: date, end_date: date):
+        if start_date > end_date:
+            raise ValueError("Start date must be before end date.")
+        # rebuild
+        base_folder = self.config.get_year_ingest_dir(self.namespace)
+        base_folder.mkdir(parents=True, exist_ok=True)
+
+        final_file = base_folder / "Index_Dividend_Yield.parquet"
+        partial_file = base_folder / "Index_Dividend_Yield_partial.parquet"
+
+        if self.rebuild:
+            if final_file.exists():
+                final_file.unlink()
+            if partial_file.exists():
+                partial_file.unlink()
+            self.logger.info("Rebuild mode: existing yield files deleted. Rebuilding from scratch.")
+        else:
+            self.logger.info("Incremental mode: appending + deduplicating (DATE, INDEX) with keep='last'.")
+
+        self.logger.info(f"Index Yield Fetch started: {start_date} to {end_date}")
+        yield_data = []
+        curr = start_date
+        processed_count = 0
+        while curr <= end_date:
+            if curr.weekday() >= 5:
+                curr += timedelta(days=1)
+                continue
+            df = self.fetch_snapshot(curr)
+            if df is not None:
+                yield_data.append(df)
+                processed_count += 1
+                if processed_count % self.save_interval == 0:
+                    self._save_partial(yield_data)
+            time.sleep(self.delay)
+            curr += timedelta(days=1)
+        self._save_final(yield_data)
+        self.logger.info("Index yield fetch completed successfully.")
+
+    # Partial Save
+    def _save_partial(self, yield_data):
+        if yield_data:
+            base_folder = self.config.get_year_ingest_dir(self.namespace)
+            partial_file = base_folder / "Index_Dividend_Yield_partial.parquet"
+            pd.concat(yield_data, ignore_index=True).to_parquet(
+                partial_file,
+                index=False
+            )
+
+    # Final Save
+    def _save_final(self, yield_data):
+        try:
+            base_folder = self.config.get_year_ingest_dir(self.namespace)
+            final_file = base_folder / "Index_Dividend_Yield.parquet"
+            partial_file = base_folder / "Index_Dividend_Yield_partial.parquet"
+
+            if yield_data:
+                new_data = pd.concat(yield_data, ignore_index=True)
+                new_data["DIVYIELD"] = pd.to_numeric(new_data["DIVYIELD"], errors="coerce")
+                if final_file.exists():
+                    existing = pd.read_parquet(final_file)
+                    existing["DIVYIELD"] = pd.to_numeric(existing["DIVYIELD"], errors="coerce")
+                    combined = pd.concat([existing, new_data], ignore_index=True)
+                    combined.drop_duplicates(subset=["DATE", "INDEX"], keep="last", inplace=True)
+                else:
+                    combined = new_data.drop_duplicates(subset=["DATE", "INDEX"], keep="last").copy()
+                combined["DIVYIELD"] = pd.to_numeric(combined["DIVYIELD"], errors="coerce")
+                combined.to_parquet(final_file, index=False)
+            if not final_file.exists():
+                raise Exception("Final file not created.")
+            if partial_file.exists():
+                partial_file.unlink()
+            self.logger.info("Final save successful. Partial file removed.")
+        except Exception as e:
+            self.logger.error(
+                f"Final save failed. Partial retained. Error: {e}"
+            )
+            raise
+
+"""
+import pandas as pd
+import time
+import logging
 from datetime import date, timedelta
 from nsepython import index_pe_pb_div
+import io
+import requests
 from src.core.fetch_config import FetchConfig
 
 class MasterIndexYieldFetcher:
@@ -139,3 +315,4 @@ class MasterIndexYieldFetcher:
                 f"Final save failed. Partial retained. Error: {e}"
             )
             raise
+"""
