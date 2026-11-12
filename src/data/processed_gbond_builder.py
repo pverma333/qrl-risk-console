@@ -34,6 +34,14 @@ class ProcessedGBondBuilder:
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
         return df["trade_date"].max()
 
+    def _get_existing_trade_dates(self, year: int) -> set:
+        path = self.output_root / str(year) / f"processed_gbond_{year}.parquet"
+        if not path.exists():
+            return set()
+        df = pd.read_parquet(path, columns=["trade_date"])
+        df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
+        return set(df["trade_date"])
+
     def _rename_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         return df.rename(columns={
             "date": "trade_date",
@@ -162,14 +170,15 @@ class ProcessedGBondBuilder:
 
         for year, group in df.groupby("_year"):
             group = group.drop(columns=["_year"])
-            latest = self._get_latest_trade_date(year)
+            existing_dates = self._get_existing_trade_dates(year)
 
-            if latest is not None:
-                group = group[group["trade_date"] > latest].copy()
-                if not group.empty:
+            if existing_dates:
+                before = len(group)
+                group = group[~group["trade_date"].isin(existing_dates)].copy()
+                if len(group) < before:
                     self.logger.info(
-                        "Year %d: incremental delta %d rows after %s",
-                        year, len(group), latest
+                        "Year %d: incremental skipping %d already-processed rows",
+                        year, before - len(group),
                     )
 
             if group.empty:

@@ -88,9 +88,11 @@ class ProcessedTradeCalendarBuilder:
         df = self._cast_types(df)
         df = self._normalize_symbols(df)
 
-        if latest is not None:
-            df = df[df["trade_date"] > latest].copy()
-            self.logger.info("Incremental delta: %d new rows after %s", len(df), latest)
+        existing_dates = set(existing["trade_date"]) if not existing.empty else set()
+        if existing_dates:
+            before = len(df)
+            df = df[~df["trade_date"].isin(existing_dates)].copy()
+            self.logger.info("Incremental: skipping %d already-processed rows", before - len(df))
 
         if df.empty:
             self.logger.info("No new rows to append. Already up to date.")
