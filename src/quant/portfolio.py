@@ -127,10 +127,11 @@ def _compute_mtm_futures(
     snapshot: MarketSnapshot,
     contract: FuturesContract,
     entry_price: float,
+    futures_settle: float,
 ) -> tuple[float, float]:
-    multiplier    = contract.quantity * contract.lot_size
-    mtm_pnl       = (snapshot.spot - entry_price) * multiplier
-    return snapshot.spot, mtm_pnl
+    multiplier = contract.quantity * contract.lot_size
+    mtm_pnl    = (futures_settle - entry_price) * multiplier
+    return futures_settle, mtm_pnl
 
 
 def _get_lot_size(curated_df: pd.DataFrame, symbol: str) -> int:
@@ -215,7 +216,10 @@ def run_portfolio(
                 delta=1.0, gamma=0.0, vega=0.0, theta=0.0, rho=0.0,
             )
             contract      = FuturesContract(quantity=quantity, lot_size=lot_size)
-            current_price, mtm_pnl = _compute_mtm_futures(snapshot, contract, entry_price)
+            current_price, mtm_pnl = _compute_mtm_futures(
+                snapshot, contract, entry_price,
+                futures_settle=float(fut_row["settle"]),
+            )
             scenario      = scenario_futures(snapshot, contract, shock)
             scenario_pnl  = scenario.pnl_total
 
