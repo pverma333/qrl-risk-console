@@ -10,7 +10,7 @@
 | 4 | Blank NSE div_yield filled with 0.0 | ✅ Done | `tests/data/test_processed_index_yield_builder.py` | `processed_index_yield_builder._handle_null_yield` now forward-fills per symbol (not `fillna(0.0)`); adds `div_yield_imputed` bool column; first-row nulls stay null so `_validate_schema` aborts cleanly |
 | 5 | Curated builders drop rows via INNER JOIN | ✅ Done | `tests/data/test_curated_join_completeness.py` | Both builders switch to LEFT JOINs; `_check_join_completeness` splits complete/rejected rows, logs per-row rejection with date/symbol/missing columns and a summary WARNING count |
 | 6 | Fetch errors swallowed at INFO level | ✅ Done | `tests/data/test_fetch_error_handling.py` | `DerivativesFetcher.run()` now logs at ERROR and returns failed dates; `MasterIndexYieldFetcher` tracks retries-exhausted dates in `_failed_dates`, `run()` returns them; `run_daily_fetch.main()` collects both and calls `sys.exit(1)` when non-empty (daily_sync.sh already checks `$?` at line 66) |
-| 7 | SyncChecker blind to history holes | ⬜ Not started | — | — |
+| 7 | SyncChecker blind to history holes | ✅ Done | `tests/data/test_sync_checker_holes.py` | Added `_find_holes`, `_get_all_dates_from_parquet/dir`, `_load_calendar_dates`, `_check_holes`, `_log_hole_report`; `run_daily_check` now loads the trade calendar and calls `_check_holes` + `_log_hole_report`; datasets with no files are skipped (avoid false holes for absent layers); hole dates logged as ISO strings in `[HOLE]` WARNING lines |
 | 8 | Incremental builders can't backfill older dates | ⬜ Not started | — | — |
 | 9 | `jugaad-data` missing from requirements.txt | ⬜ Not started | — | — |
 | 10 | Mixed-symbol VaR (needs decision) | ⬜ Not started | — | — |

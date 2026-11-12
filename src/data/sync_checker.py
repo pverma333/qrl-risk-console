@@ -178,6 +178,93 @@ class SyncChecker:
     # Core comparison logic
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Hole detection: dates present in calendar but absent from a dataset
+    # ------------------------------------------------------------------
+
+    def _find_holes(
+        self, dataset_dates: set[date], calendar_dates: set[date]
+    ) -> list[date]:
+        """Return sorted list of calendar dates absent from dataset_dates."""
+        return sorted(calendar_dates - dataset_dates)
+
+    def _get_all_dates_from_parquet(
+        self, path: Path, date_col: str = "trade_date"
+    ) -> set[date]:
+        if not path.exists():
+            return set()
+        try:
+            df = pd.read_parquet(path, columns=[date_col])
+        except Exception:
+            return set()
+        if date_col not in df.columns or df.empty:
+            return set()
+        df[date_col] = pd.to_datetime(df[date_col]).dt.date
+        return set(df[date_col].dropna())
+
+    def _get_all_dates_from_dir(
+        self, root: Path, date_col: str = "trade_date"
+    ) -> set[date]:
+        if not root.exists():
+            return set()
+        dates: set[date] = set()
+        for f in sorted(root.rglob("*.parquet")):
+            dates |= self._get_all_dates_from_parquet(f, date_col=date_col)
+        return dates
+
+    def _load_calendar_dates(self) -> set[date]:
+        tc_path = self.processed_dir / "trade_calendar" / "trade_calendar.parquet"
+        return self._get_all_dates_from_parquet(tc_path, date_col="trade_date")
+
+    def _check_holes(self, calendar_dates: set[date]) -> dict[str, list[date]]:
+        """Return {dataset_label: [missing_dates]} for datasets that exist but have gaps."""
+        results: dict[str, list[date]] = {}
+
+        year_partitioned = {
+            "processed/options":     (self.processed_dir / "options",     "trade_date"),
+            "processed/futures":     (self.processed_dir / "futures",     "trade_date"),
+            "processed/index_spot":  (self.processed_dir / "index_spot",  "trade_date"),
+            "processed/vix":         (self.processed_dir / "vix",         "trade_date"),
+            "processed/index_yield": (self.processed_dir / "index_yield", "trade_date"),
+            "processed/gbond":       (self.processed_dir / "gbond",       "trade_date"),
+        }
+        for label, (path, col) in year_partitioned.items():
+            dataset_dates = self._get_all_dates_from_dir(path, date_col=col)
+            if not dataset_dates:
+                continue  # dataset absent — already surfaced by _log_sync_report
+            holes = self._find_holes(dataset_dates, calendar_dates)
+            if holes:
+                results[label] = holes
+
+        if self.curated_dir.exists():
+            for subdir in sorted(self.curated_dir.iterdir()):
+                if not subdir.is_dir():
+                    continue
+                label = f"curated/{subdir.name}"
+                dataset_dates = self._get_all_dates_from_dir(subdir, date_col="trade_date")
+                if not dataset_dates:
+                    continue
+                holes = self._find_holes(dataset_dates, calendar_dates)
+                if holes:
+                    results[label] = holes
+
+        return results
+
+    def _log_hole_report(self, holes_by_dataset: dict[str, list[date]]):
+        for name, holes in sorted(holes_by_dataset.items()):
+            self.logger.warning(
+                "[HOLE] %-40s missing %d date(s): %s",
+                name, len(holes), [str(d) for d in holes],
+            )
+        if holes_by_dataset:
+            self.logger.warning(
+                "[HOLE] %d dataset(s) have history gaps — re-run incremental build "
+                "for the missing dates",
+                len(holes_by_dataset),
+            )
+
+    # ------------------------------------------------------------------
+
     def _compute_expected_date(
         self, all_dates: dict[str, Optional[date]]
     ) -> Optional[date]:
@@ -262,6 +349,11 @@ class SyncChecker:
         expected = self._compute_expected_date(all_dates)
 
         self._log_sync_report(all_dates, expected)
+
+        calendar_dates = self._load_calendar_dates()
+        if calendar_dates:
+            holes_by_dataset = self._check_holes(calendar_dates)
+            self._log_hole_report(holes_by_dataset)
 
     def run_full_check(
         self,
