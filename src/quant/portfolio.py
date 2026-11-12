@@ -130,7 +130,7 @@ def _build_snapshot(row: pd.Series) -> MarketSnapshot:
         spot=float(row["spot"]),
         iv=float(row["iv"])       if pd.notna(row["iv"])    else None,
         rate=float(row["rate"]),
-        div_yield=float(row["div_yield"]),
+        div_yield=float(row["div_yield"]) / 100.0,
         dte=int(row["dte"]),
         delta=float(row["delta"]) if pd.notna(row["delta"]) else None,
         gamma=float(row["gamma"]) if pd.notna(row["gamma"]) else None,
@@ -195,7 +195,7 @@ def run_portfolio(
             snapshot = MarketSnapshot(
                 spot=float(fut_row["spot"]),
                 iv=None, rate=float(fut_row["rate"]),
-                div_yield=float(fut_row["div_yield"]),
+                div_yield=float(fut_row["div_yield"]) / 100.0,
                 dte=int(fut_row["dte"]),
                 delta=1.0, gamma=0.0, vega=0.0, theta=0.0, rho=0.0,
             )

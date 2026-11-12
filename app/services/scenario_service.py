@@ -103,7 +103,7 @@ def _build_snapshot_from_option(row: pd.Series) -> MarketSnapshot:
         spot=float(row["spot"]),
         iv=float(row["iv"])       if pd.notna(row["iv"])    else None,
         rate=float(row["rate"]),
-        div_yield=float(row["div_yield"]),
+        div_yield=float(row["div_yield"]) / 100.0,
         dte=int(row["dte"]),
         delta=float(row["delta"]) if pd.notna(row["delta"]) else None,
         gamma=float(row["gamma"]) if pd.notna(row["gamma"]) else None,
@@ -118,7 +118,7 @@ def _build_snapshot_from_futures(row: pd.Series) -> MarketSnapshot:
         spot=float(row["spot"]),
         iv=None,
         rate=float(row["rate"]),
-        div_yield=float(row["div_yield"]),
+        div_yield=float(row["div_yield"]) / 100.0,
         dte=int(row["dte"]),
         delta=1.0, gamma=0.0, vega=0.0, theta=0.0, rho=0.0,
     )
