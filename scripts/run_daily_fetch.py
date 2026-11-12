@@ -27,16 +27,17 @@ from src.data.curated_futures_builder import CuratedFuturesBuilder
 
 def main():
 
-
     #today = datetime(2026, 9, 3).date()
     today = datetime.today().date()
     config = FetchConfig(BASE_DIR, use_year_partition=True)
 
+    fetch_failures: list = []
+
     # Ingest Layer
-    DerivativesFetcher(config=config, rebuild=False).run(start_date=today, end_date=today)
+    fetch_failures += DerivativesFetcher(config=config, rebuild=False).run(start_date=today, end_date=today)
     TradeCalendarWriter(config=config, rebuild=False).run()
     MasterIndexFetcher(config=config, rebuild=False).run(start_date=today, end_date=today)
-    MasterIndexYieldFetcher(config=config, rebuild=False).run(start_date=today, end_date=today)
+    fetch_failures += MasterIndexYieldFetcher(config=config, rebuild=False).run(start_date=today, end_date=today)
     GbondDailyFetch(config=config).run()
 
     # Processed Layer
@@ -55,8 +56,14 @@ def main():
     #Sync Checker
     SyncChecker(config).run(mode="daily")
 
+    return fetch_failures
+
 if __name__ == "__main__":
-    main()
+    import sys
+    failed = main()
+    if failed:
+        logging.error("Pipeline exiting with failure — %d fetch date(s) failed: %s", len(failed), failed)
+        sys.exit(1)
 
 #run script
 """
