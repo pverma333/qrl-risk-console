@@ -11,3 +11,4 @@ requests
 plotly
 pyarrow
 boto3
+jugaad-data==0.29
