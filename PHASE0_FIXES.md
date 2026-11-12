@@ -8,7 +8,7 @@
 | 2 | Expiry-day positions show zero P&L | ✅ Done | `tests/quant/test_expiry_day.py` | `portfolio._compute_mtm_option`, `scenario_engine.scenario_option` and `price_option` split `dte <= 0` into `dte < 0` (expired → zero) and `dte == 0` (intrinsic repricing; scenario uses shocked intrinsic, vol/rate shocks ignored); seeded MTM 10,676.25 matches oracle |
 | 3 | Futures MTM uses index spot, not settle | ✅ Done | `tests/quant/test_futures_mtm.py` | `portfolio._compute_mtm_futures` now takes `futures_settle` parameter; `run_portfolio` passes `fut_row["settle"]`; scenario P&L stays spot-based (unchanged) |
 | 4 | Blank NSE div_yield filled with 0.0 | ✅ Done | `tests/data/test_processed_index_yield_builder.py` | `processed_index_yield_builder._handle_null_yield` now forward-fills per symbol (not `fillna(0.0)`); adds `div_yield_imputed` bool column; first-row nulls stay null so `_validate_schema` aborts cleanly |
-| 5 | Curated builders drop rows via INNER JOIN | ⬜ Not started | — | — |
+| 5 | Curated builders drop rows via INNER JOIN | ✅ Done | `tests/data/test_curated_join_completeness.py` | Both builders switch to LEFT JOINs; `_check_join_completeness` splits complete/rejected rows, logs per-row rejection with date/symbol/missing columns and a summary WARNING count |
 | 6 | Fetch errors swallowed at INFO level | ⬜ Not started | — | — |
 | 7 | SyncChecker blind to history holes | ⬜ Not started | — | — |
 | 8 | Incremental builders can't backfill older dates | ⬜ Not started | — | — |

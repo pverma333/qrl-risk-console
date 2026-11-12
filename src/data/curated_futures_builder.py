@@ -27,15 +27,15 @@ QUERY = """
         g6.yield_pct AS rate_6m,
         g1.yield_pct AS rate_1y
     FROM v_processed_futures f
-    JOIN v_processed_index_spot s
+    LEFT JOIN v_processed_index_spot s
         ON f.trade_date = s.trade_date AND f.symbol = s.symbol
-    JOIN v_processed_index_yield y
+    LEFT JOIN v_processed_index_yield y
         ON f.trade_date = y.trade_date AND f.symbol = y.symbol
-    JOIN v_processed_gbond g3
+    LEFT JOIN v_processed_gbond g3
         ON f.trade_date = g3.trade_date AND g3.tenor = '3m'
-    JOIN v_processed_gbond g6
+    LEFT JOIN v_processed_gbond g6
         ON f.trade_date = g6.trade_date AND g6.tenor = '6m'
-    JOIN v_processed_gbond g1
+    LEFT JOIN v_processed_gbond g1
         ON f.trade_date = g1.trade_date AND g1.tenor = '1y'
 """
 
@@ -81,6 +81,26 @@ class CuratedFuturesBuilder:
         df = self.con.execute(QUERY + " " + where).df()
         self.logger.info("Year %d: queried %d rows", year, len(df))
         return df
+
+    _JOIN_COLS = ["spot", "div_yield", "rate_3m", "rate_6m", "rate_1y"]
+
+    def _check_join_completeness(
+        self, df: pd.DataFrame
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        missing_mask = df[self._JOIN_COLS].isnull().any(axis=1)
+        rejected = df[missing_mask].copy()
+        complete = df[~missing_mask].copy()
+        if not rejected.empty:
+            for _, row in rejected.iterrows():
+                missing = [c for c in self._JOIN_COLS if pd.isna(row[c])]
+                self.logger.warning(
+                    "REJECTION: trade_date=%s symbol=%s missing=%s",
+                    row["trade_date"], row["symbol"], missing,
+                )
+            self.logger.warning(
+                "REJECTION SUMMARY: %d rows dropped (missing join inputs)", len(rejected)
+            )
+        return complete, rejected
 
     def _interpolate_rates(self, df: pd.DataFrame) -> pd.DataFrame:
         dte  = df["dte"].to_numpy(dtype=np.float64)
@@ -190,6 +210,17 @@ class CuratedFuturesBuilder:
 
         if df.empty:
             self.logger.info("Year %d: no new rows. Skipping.", year)
+            return
+
+        df, rejected = self._check_join_completeness(df)
+        if not rejected.empty:
+            self.logger.warning(
+                "Year %d: %d rows dropped due to missing join inputs — "
+                "check spot/yield/gbond sources for gaps",
+                year, len(rejected),
+            )
+        if df.empty:
+            self.logger.warning("Year %d: all rows rejected — skipping write.", year)
             return
 
         df = self._interpolate_rates(df)
