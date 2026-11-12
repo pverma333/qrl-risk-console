@@ -61,6 +61,7 @@ class ProcessedIndexYieldBuilder:
         null_count = null_mask.sum()
 
         if null_count == 0:
+            df["div_yield_imputed"] = False
             return df
 
         affected = df[null_mask][["trade_date", "symbol"]].copy()
@@ -72,9 +73,21 @@ class ProcessedIndexYieldBuilder:
             "NULL div_yield: %d rows | symbol(s): %s | period: %s to %s",
             null_count, affected_symbols, date_min, date_max
         )
-        self.logger.warning("Action: filled with 0.0 | Reason: %s", NULL_YIELD_FILL_NOTE)
+        self.logger.warning(
+            "Action: forward-filled per symbol | Reason: %s", NULL_YIELD_FILL_NOTE
+        )
 
-        df["div_yield"] = df["div_yield"].fillna(0.0)
+        # Mark which rows are null BEFORE filling, so the flag is accurate.
+        null_before = df["div_yield"].isnull()
+
+        # Forward-fill per symbol; first-row nulls stay null (no prior value).
+        df["div_yield"] = df.groupby("symbol")["div_yield"].transform(
+            lambda s: s.ffill()
+        )
+
+        # Flag rows that were null and were successfully filled.
+        df["div_yield_imputed"] = null_before & df["div_yield"].notna()
+
         return df
 
     def _deduplicate(self, df: pd.DataFrame) -> pd.DataFrame:
