@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
 #run script
 """
-python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-07-12 --rebuild
+python -m scripts.run_data_pipeline --start 2019-01-01 --end 2026-11-12 --rebuild
 python -m scripts.run_data_pipeline --start 2025-12-12 --end 2026-01-12 --rebuild
 python -m scripts.run_data_pipeline --start 2025-12-12 --end 2026-02-20 --rebuild
 

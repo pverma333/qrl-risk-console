@@ -47,6 +47,7 @@ def sample_df():
             "rate_3m":      6.44,
             "rate_6m":      6.56,
             "rate_1y":      6.566,
+            "rate_imputed": False,
         }
     ])
 
@@ -77,6 +78,7 @@ def multi_row_df():
             "rate_3m":       6.44,
             "rate_6m":       6.56,
             "rate_1y":       6.566,
+            "rate_imputed":  False,
         })
     # add one invalid row — zero settle
     rows.append({

@@ -33,6 +33,7 @@ class MasterIndexYieldFetcher:
         self.save_interval = save_interval
         self.delay = delay
         self.rebuild = rebuild
+        self._failed_dates: list = []
 
         logging.basicConfig(
             filename=self.log_path / "data_pipeline_fetch.log",
@@ -90,6 +91,7 @@ class MasterIndexYieldFetcher:
                 )
                 time.sleep(2 ** attempt)
         self.logger.error(f"Failed after retries: {target_date}")
+        self._failed_dates.append(target_date)
         return None
 
     # Runner
@@ -129,7 +131,14 @@ class MasterIndexYieldFetcher:
             time.sleep(self.delay)
             curr += timedelta(days=1)
         self._save_final(yield_data)
-        self.logger.info("Index yield fetch completed successfully.")
+        if self._failed_dates:
+            self.logger.error(
+                "MasterIndexYieldFetcher: %d trading date(s) failed after retries: %s",
+                len(self._failed_dates), self._failed_dates,
+            )
+        else:
+            self.logger.info("Index yield fetch completed successfully.")
+        return list(self._failed_dates)
 
     # Partial Save
     def _save_partial(self, yield_data):

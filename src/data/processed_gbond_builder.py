@@ -11,6 +11,7 @@ class ProcessedGBondBuilder:
     def __init__(self, config: FetchConfig):
         self.ingest_file = config.ingest_dir / "gbond" / "gbond_combined.parquet"
         self.output_root = config.processed_dir / "gbond"
+        self.tc_path = config.processed_dir / "trade_calendar" / "trade_calendar.parquet"
 
         logging.basicConfig(
             filename=config.logs_dir / "data_pipeline_fetch.log",
@@ -33,6 +34,61 @@ class ProcessedGBondBuilder:
         df = pd.read_parquet(path, columns=["trade_date"])
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
         return df["trade_date"].max()
+
+    def _get_existing_trade_dates(self, year: int) -> set:
+        path = self.output_root / str(year) / f"processed_gbond_{year}.parquet"
+        if not path.exists():
+            return set()
+        df = pd.read_parquet(path, columns=["trade_date"])
+        df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
+        return set(df["trade_date"])
+
+    def _load_calendar_dates(self) -> set:
+        if not self.tc_path.exists():
+            return set()
+        df = pd.read_parquet(self.tc_path, columns=["trade_date"])
+        df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
+        return set(df["trade_date"])
+
+    def _ffill_missing_trading_dates(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Forward-fill G-bond rates for trading days absent from ingest."""
+        calendar_dates = self._load_calendar_dates()
+        if not calendar_dates:
+            return df
+
+        ingest_dates = set(df["trade_date"].unique())
+        if not ingest_dates:
+            return df
+
+        min_date = min(ingest_dates)
+        # Include all calendar dates from first ingest date onward; each missing
+        # date will only be filled if a prior ingest row exists for that tenor.
+        target_dates = {d for d in calendar_dates if d >= min_date}
+        missing_dates = target_dates - ingest_dates
+
+        if not missing_dates:
+            return df
+
+        self.logger.info("Ffilling %d missing trading dates: %s",
+                         len(missing_dates), sorted(missing_dates))
+
+        ffill_rows = []
+        for tenor in df["tenor"].unique():
+            tenor_df = df[df["tenor"] == tenor].sort_values("trade_date")
+            for missing_date in sorted(missing_dates):
+                prior = tenor_df[tenor_df["trade_date"] < missing_date]
+                if prior.empty:
+                    continue
+                row = prior.iloc[-1].to_dict()
+                row["trade_date"] = missing_date
+                row["rate_imputed"] = True
+                row["change_pct"] = 0.0
+                ffill_rows.append(row)
+
+        if not ffill_rows:
+            return df
+
+        return pd.concat([df, pd.DataFrame(ffill_rows)], ignore_index=True)
 
     def _rename_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         return df.rename(columns={
@@ -109,7 +165,8 @@ class ProcessedGBondBuilder:
         return df
 
     def _validate_schema(self, df: pd.DataFrame):
-        required = {"trade_date", "tenor", "yield_pct", "open", "high", "low", "change_pct"}
+        required = {"trade_date", "tenor", "yield_pct", "open", "high", "low", "change_pct",
+                    "rate_imputed"}
         missing = required - set(df.columns)
         if missing:
             raise ValueError(f"Schema validation failed. Missing columns: {missing}")
@@ -129,6 +186,8 @@ class ProcessedGBondBuilder:
         if mode == "incremental" and out_path.exists():
             existing = pd.read_parquet(out_path)
             existing["trade_date"] = pd.to_datetime(existing["trade_date"]).dt.date
+            if "rate_imputed" not in existing.columns:
+                existing["rate_imputed"] = False
             combined = pd.concat([existing, df], ignore_index=True)
             df = self._deduplicate(combined)
 
@@ -140,6 +199,7 @@ class ProcessedGBondBuilder:
         df = self._rename_columns(df)
         df = self._parse_dates(df)
         df = self._correct_par_prices(df)
+        df["rate_imputed"] = False
         df = self._deduplicate(df)
         self._validate_schema(df)
         return df
@@ -147,6 +207,7 @@ class ProcessedGBondBuilder:
     def build_all(self):
         df = self._read_ingest()
         df = self._run_pipeline(df)
+        df = self._ffill_missing_trading_dates(df)
         df["_year"] = pd.to_datetime(df["trade_date"]).dt.year
 
         for year, group in df.groupby("_year"):
@@ -158,18 +219,20 @@ class ProcessedGBondBuilder:
     def build_incremental(self):
         df = self._read_ingest()
         df = self._run_pipeline(df)
+        df = self._ffill_missing_trading_dates(df)
         df["_year"] = pd.to_datetime(df["trade_date"]).dt.year
 
         for year, group in df.groupby("_year"):
             group = group.drop(columns=["_year"])
-            latest = self._get_latest_trade_date(year)
+            existing_dates = self._get_existing_trade_dates(year)
 
-            if latest is not None:
-                group = group[group["trade_date"] > latest].copy()
-                if not group.empty:
+            if existing_dates:
+                before = len(group)
+                group = group[~group["trade_date"].isin(existing_dates)].copy()
+                if len(group) < before:
                     self.logger.info(
-                        "Year %d: incremental delta %d rows after %s",
-                        year, len(group), latest
+                        "Year %d: incremental skipping %d already-processed rows",
+                        year, before - len(group),
                     )
 
             if group.empty:

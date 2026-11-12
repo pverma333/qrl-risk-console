@@ -94,7 +94,22 @@ def _compute_mtm_option(
     contract: OptionContract,
     entry_price: float,
 ) -> tuple[Optional[float], float]:
-    if snapshot.dte <= 0 or snapshot.iv is None or snapshot.iv <= 0:
+    if snapshot.dte < 0:
+        # already expired — no P&L contribution
+        return None, 0.0
+
+    if snapshot.dte == 0:
+        # expiry day: price is intrinsic, vol/rate irrelevant
+        S, K = snapshot.spot, contract.strike
+        if contract.option_type == "CE":
+            current_price = max(S - K, 0.0)
+        else:
+            current_price = max(K - S, 0.0)
+        multiplier = contract.quantity * contract.lot_size
+        mtm_pnl    = (current_price - entry_price) * multiplier
+        return current_price, mtm_pnl
+
+    if snapshot.iv is None or snapshot.iv <= 0:
         return None, 0.0
 
     T = _time_to_expiry(snapshot.dte)
@@ -112,10 +127,11 @@ def _compute_mtm_futures(
     snapshot: MarketSnapshot,
     contract: FuturesContract,
     entry_price: float,
+    futures_settle: float,
 ) -> tuple[float, float]:
-    multiplier    = contract.quantity * contract.lot_size
-    mtm_pnl       = (snapshot.spot - entry_price) * multiplier
-    return snapshot.spot, mtm_pnl
+    multiplier = contract.quantity * contract.lot_size
+    mtm_pnl    = (futures_settle - entry_price) * multiplier
+    return futures_settle, mtm_pnl
 
 
 def _get_lot_size(curated_df: pd.DataFrame, symbol: str) -> int:
@@ -130,7 +146,7 @@ def _build_snapshot(row: pd.Series) -> MarketSnapshot:
         spot=float(row["spot"]),
         iv=float(row["iv"])       if pd.notna(row["iv"])    else None,
         rate=float(row["rate"]),
-        div_yield=float(row["div_yield"]),
+        div_yield=float(row["div_yield"]) / 100.0,
         dte=int(row["dte"]),
         delta=float(row["delta"]) if pd.notna(row["delta"]) else None,
         gamma=float(row["gamma"]) if pd.notna(row["gamma"]) else None,
@@ -195,12 +211,15 @@ def run_portfolio(
             snapshot = MarketSnapshot(
                 spot=float(fut_row["spot"]),
                 iv=None, rate=float(fut_row["rate"]),
-                div_yield=float(fut_row["div_yield"]),
+                div_yield=float(fut_row["div_yield"]) / 100.0,
                 dte=int(fut_row["dte"]),
                 delta=1.0, gamma=0.0, vega=0.0, theta=0.0, rho=0.0,
             )
             contract      = FuturesContract(quantity=quantity, lot_size=lot_size)
-            current_price, mtm_pnl = _compute_mtm_futures(snapshot, contract, entry_price)
+            current_price, mtm_pnl = _compute_mtm_futures(
+                snapshot, contract, entry_price,
+                futures_settle=float(fut_row["settle"]),
+            )
             scenario      = scenario_futures(snapshot, contract, shock)
             scenario_pnl  = scenario.pnl_total
 

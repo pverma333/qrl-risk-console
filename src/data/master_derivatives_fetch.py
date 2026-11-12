@@ -56,6 +56,7 @@ class DerivativesFetcher:
 
         curr = start_date
         batch_data = []
+        failed_dates = []
 
         while curr <= end_date:
             if curr.weekday() >= 5:
@@ -74,13 +75,22 @@ class DerivativesFetcher:
                     batch_data = []
 
             except Exception as e:
-                self.logger.info(f"Error on {curr}: {e}")
+                self.logger.error(f"Error on {curr}: {e}")
+                failed_dates.append(curr)
 
             curr += timedelta(days=1)
             time.sleep(1.0)
 
         if batch_data:
             self._save(batch_data)
+
+        if failed_dates:
+            self.logger.error(
+                "DerivativesFetcher: %d trading date(s) failed: %s",
+                len(failed_dates), failed_dates,
+            )
+
+        return failed_dates
 
     # Fetch Router
     def _fetch_by_date(self, target_date: date):

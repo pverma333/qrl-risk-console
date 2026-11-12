@@ -152,6 +152,17 @@ class ProcessedDerivativesBuilder:
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
         return df["trade_date"].max()
 
+    def _get_existing_trade_dates(self, year: int, table: str) -> set:
+        if table == "options":
+            path = self.options_root / str(year) / f"processed_options_{year}.parquet"
+        else:
+            path = self.futures_root / str(year) / f"processed_futures_{year}.parquet"
+        if not path.exists():
+            return set()
+        df = pd.read_parquet(path, columns=["trade_date"])
+        df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
+        return set(df["trade_date"])
+
     def _process_year(self, year: int, mode: str):
         df = self._read_ingest_year(year)
         df = self._rename_columns(df)
@@ -159,18 +170,18 @@ class ProcessedDerivativesBuilder:
         df = self._compute_dte(df)
 
         if mode == "incremental":
-            latest_options = self._get_latest_trade_date(year, "options")
-            latest_futures = self._get_latest_trade_date(year, "futures")
-            latest = min(
-                d for d in [latest_options, latest_futures] if d is not None
-            ) if any([latest_options, latest_futures]) else None
+            existing_options = self._get_existing_trade_dates(year, "options")
+            existing_futures = self._get_existing_trade_dates(year, "futures")
+            # process a date if it is missing from EITHER table (intersection = fully done)
+            fully_done = existing_options & existing_futures
 
-            if latest is not None:
-                df = df[df["trade_date"] > latest].copy()
-                if not df.empty:
+            if fully_done:
+                before = len(df)
+                df = df[~df["trade_date"].isin(fully_done)].copy()
+                if len(df) < before:
                     self.logger.info(
-                        "Year %d: incremental delta %d rows after %s",
-                        year, len(df), latest
+                        "Year %d: incremental skipping %d already-processed rows",
+                        year, before - len(df),
                     )
 
             if df.empty:

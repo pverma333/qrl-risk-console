@@ -37,6 +37,14 @@ class ProcessedIndexYieldBuilder:
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
         return df["trade_date"].max()
 
+    def _get_existing_trade_dates(self, year: int) -> set:
+        path = self.output_root / str(year) / f"processed_index_yield_{year}.parquet"
+        if not path.exists():
+            return set()
+        df = pd.read_parquet(path, columns=["trade_date"])
+        df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
+        return set(df["trade_date"])
+
     def _rename_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         return df.rename(columns={
             "DATE": "trade_date",
@@ -61,6 +69,7 @@ class ProcessedIndexYieldBuilder:
         null_count = null_mask.sum()
 
         if null_count == 0:
+            df["div_yield_imputed"] = False
             return df
 
         affected = df[null_mask][["trade_date", "symbol"]].copy()
@@ -72,9 +81,21 @@ class ProcessedIndexYieldBuilder:
             "NULL div_yield: %d rows | symbol(s): %s | period: %s to %s",
             null_count, affected_symbols, date_min, date_max
         )
-        self.logger.warning("Action: filled with 0.0 | Reason: %s", NULL_YIELD_FILL_NOTE)
+        self.logger.warning(
+            "Action: forward-filled per symbol | Reason: %s", NULL_YIELD_FILL_NOTE
+        )
 
-        df["div_yield"] = df["div_yield"].fillna(0.0)
+        # Mark which rows are null BEFORE filling, so the flag is accurate.
+        null_before = df["div_yield"].isnull()
+
+        # Forward-fill per symbol; first-row nulls stay null (no prior value).
+        df["div_yield"] = df.groupby("symbol")["div_yield"].transform(
+            lambda s: s.ffill()
+        )
+
+        # Flag rows that were null and were successfully filled.
+        df["div_yield_imputed"] = null_before & df["div_yield"].notna()
+
         return df
 
     def _deduplicate(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -135,14 +156,15 @@ class ProcessedIndexYieldBuilder:
 
         for year, group in df.groupby("_year"):
             group = group.drop(columns=["_year"])
-            latest = self._get_latest_trade_date(year)
+            existing_dates = self._get_existing_trade_dates(year)
 
-            if latest is not None:
-                group = group[group["trade_date"] > latest].copy()
-                if not group.empty:
+            if existing_dates:
+                before = len(group)
+                group = group[~group["trade_date"].isin(existing_dates)].copy()
+                if len(group) < before:
                     self.logger.info(
-                        "Year %d: incremental delta %d rows after %s",
-                        year, len(group), latest
+                        "Year %d: incremental skipping %d already-processed rows",
+                        year, before - len(group),
                     )
 
             if group.empty:
