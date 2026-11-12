@@ -75,10 +75,19 @@ class CuratedOptionChainBuilder:
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
         return df["trade_date"].max()
 
-    def _query_year(self, year: int, since_date=None) -> pd.DataFrame:
+    def _get_existing_trade_dates(self, year: int) -> set:
+        path = self.output_root / str(year) / f"curated_options_{year}.parquet"
+        if not path.exists():
+            return set()
+        df = pd.read_parquet(path, columns=["trade_date"])
+        df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
+        return set(df["trade_date"])
+
+    def _query_year(self, year: int, existing_dates: set = None) -> pd.DataFrame:
         where = f"WHERE YEAR(o.trade_date) = {year}"
-        if since_date is not None:
-            where += f" AND o.trade_date > '{since_date}'"
+        if existing_dates:
+            date_list = ", ".join(f"'{d}'" for d in sorted(existing_dates))
+            where += f" AND o.trade_date NOT IN ({date_list})"
         df = self.con.execute(QUERY + " " + where).df()
         self.logger.info("Year %d: queried %d rows", year, len(df))
         return df
@@ -208,8 +217,8 @@ class CuratedOptionChainBuilder:
 
     def _process_year(self, year: int, mode: str):
         self.logger.info("Processing year %d | mode=%s", year, mode)
-        since = self._get_latest_trade_date(year) if mode == "incremental" else None
-        df    = self._query_year(year, since_date=since)
+        existing_dates = self._get_existing_trade_dates(year) if mode == "incremental" else set()
+        df = self._query_year(year, existing_dates=existing_dates)
 
         if df.empty:
             self.logger.info("Year %d: no new rows. Skipping.", year)
