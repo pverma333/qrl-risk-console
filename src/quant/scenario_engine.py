@@ -58,12 +58,26 @@ def _apply_shock_to_market(snapshot: MarketSnapshot, shock: Shock) -> tuple[floa
     return S_shocked, r_shocked, σ_shocked
 
 
+def _intrinsic(spot: float, strike: float, option_type: str) -> float:
+    if option_type == "CE":
+        return max(spot - strike, 0.0)
+    return max(strike - spot, 0.0)
+
+
 def price_option(snapshot: MarketSnapshot, contract: OptionContract) -> ScenarioPnL:
-    if snapshot.dte <= 0:
+    if snapshot.dte < 0:
         return ScenarioPnL(
             base_price=None, shocked_price=None,
             mtm_pnl=0.0, pnl_per_lot=0.0,
             pnl_total=0.0, method="expired"
+        )
+
+    if snapshot.dte == 0:
+        base_price = _intrinsic(snapshot.spot, contract.strike, contract.option_type)
+        return ScenarioPnL(
+            base_price=base_price, shocked_price=None,
+            mtm_pnl=0.0, pnl_per_lot=0.0,
+            pnl_total=0.0, method="expiry_intrinsic"
         )
 
     T = _time_to_expiry(snapshot.dte)
@@ -91,11 +105,25 @@ def scenario_option(
     contract: OptionContract,
     shock: Shock,
 ) -> ScenarioPnL:
-    if snapshot.dte <= 0:
+    if snapshot.dte < 0:
         return ScenarioPnL(
             base_price=None, shocked_price=None,
             mtm_pnl=0.0, pnl_per_lot=0.0,
             pnl_total=0.0, method="expired"
+        )
+
+    if snapshot.dte == 0:
+        # at expiry vol and rate shocks don't matter; only the spot shock changes intrinsic
+        S_shocked  = snapshot.spot * (1.0 + shock.spot_shock_pct / 100.0)
+        base_price    = _intrinsic(snapshot.spot, contract.strike, contract.option_type)
+        shocked_price = _intrinsic(S_shocked,     contract.strike, contract.option_type)
+        multiplier    = contract.quantity * contract.lot_size
+        pnl_per_lot   = shocked_price - base_price
+        pnl_total     = pnl_per_lot * multiplier
+        return ScenarioPnL(
+            base_price=base_price, shocked_price=shocked_price,
+            mtm_pnl=0.0, pnl_per_lot=pnl_per_lot,
+            pnl_total=pnl_total, method="expiry_intrinsic"
         )
 
     T             = _time_to_expiry(snapshot.dte)

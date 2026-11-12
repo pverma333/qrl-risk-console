@@ -56,9 +56,10 @@ class TestScenarioOptionFullReprice:
         assert result.method == "full_reprice"
 
     def test_expired_position_returns_zero(self):
+        # dte=-1: contract already gone — zero pnl, method "expired"
         snap = MarketSnapshot(
             spot=22000.0, iv=0.18, rate=0.065, div_yield=0.012,
-            dte=0, delta=0.5, gamma=0.002, vega=8.5, theta=-5.0, rho=3.2,
+            dte=-1, delta=0.5, gamma=0.002, vega=8.5, theta=-5.0, rho=3.2,
         )
         result = scenario_option(snap, make_contract(), make_shock(spot=2.0))
         assert result.pnl_total == 0.0

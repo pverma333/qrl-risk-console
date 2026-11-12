@@ -94,7 +94,22 @@ def _compute_mtm_option(
     contract: OptionContract,
     entry_price: float,
 ) -> tuple[Optional[float], float]:
-    if snapshot.dte <= 0 or snapshot.iv is None or snapshot.iv <= 0:
+    if snapshot.dte < 0:
+        # already expired — no P&L contribution
+        return None, 0.0
+
+    if snapshot.dte == 0:
+        # expiry day: price is intrinsic, vol/rate irrelevant
+        S, K = snapshot.spot, contract.strike
+        if contract.option_type == "CE":
+            current_price = max(S - K, 0.0)
+        else:
+            current_price = max(K - S, 0.0)
+        multiplier = contract.quantity * contract.lot_size
+        mtm_pnl    = (current_price - entry_price) * multiplier
+        return current_price, mtm_pnl
+
+    if snapshot.iv is None or snapshot.iv <= 0:
         return None, 0.0
 
     T = _time_to_expiry(snapshot.dte)

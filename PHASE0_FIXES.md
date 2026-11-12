@@ -1,5 +1,20 @@
 # QRL Phase 0 — bug fixes (from the 12 Oct–11 Nov 2026 simulation)
 
+## Status
+
+| # | Bug | Status | Test | What changed |
+|---|-----|--------|------|--------------|
+| 1 | div_yield passed as percent instead of decimal | ✅ Done | `tests/quant/test_div_yield_units.py` | `portfolio._build_snapshot` and `scenario_service._build_snapshot_from_option/_from_futures` now divide `div_yield` by 100; option prices, `/scenario` P&L and VaR all match the oracle |
+| 2 | Expiry-day positions show zero P&L | ✅ Done | `tests/quant/test_expiry_day.py` | `portfolio._compute_mtm_option`, `scenario_engine.scenario_option` and `price_option` split `dte <= 0` into `dte < 0` (expired → zero) and `dte == 0` (intrinsic repricing; scenario uses shocked intrinsic, vol/rate shocks ignored); seeded MTM 10,676.25 matches oracle |
+| 3 | Futures MTM uses index spot, not settle | ⬜ Not started | — | — |
+| 4 | Blank NSE div_yield filled with 0.0 | ⬜ Not started | — | — |
+| 5 | Curated builders drop rows via INNER JOIN | ⬜ Not started | — | — |
+| 6 | Fetch errors swallowed at INFO level | ⬜ Not started | — | — |
+| 7 | SyncChecker blind to history holes | ⬜ Not started | — | — |
+| 8 | Incremental builders can't backfill older dates | ⬜ Not started | — | — |
+| 9 | `jugaad-data` missing from requirements.txt | ⬜ Not started | — | — |
+| 10 | Mixed-symbol VaR (needs decision) | ⬜ Not started | — | — |
+
 Context for Claude Code: a month of NSE-style data (synthetic, deterministic) was replayed through this repo's
 real daily pipeline and every output was compared with an independent oracle (own Black-Scholes / IV / Greeks /
 rate interpolation / VaR). Spot, DTE, rate, IV and Greeks all matched. The items below did not.
