@@ -116,25 +116,48 @@ def compute_var(
             f"Check that processed index spot data exists."
         )
 
+    # Build per-symbol return lookups keyed by trade_date.
+    # Primary symbol drives the scenario date set; secondaries fall back to it.
+    primary_lookup: dict = dict(zip(returns_df["trade_date"], returns_df["daily_return"]))
+    book_symbols   = sorted(positions_df["symbol"].unique())
+
+    sym_returns: dict[str, dict] = {}
+    for sym in book_symbols:
+        if sym == symbol:
+            sym_returns[sym] = primary_lookup
+        else:
+            sec_df = _fetch_historical_returns(db, sym, trade_date, lookback_days)
+            sym_returns[sym] = (
+                dict(zip(sec_df["trade_date"], sec_df["daily_return"]))
+                if not sec_df.empty
+                else primary_lookup
+            )
+
     scenarios: list[ScenarioPnLPoint] = []
 
     for _, row in returns_df.iterrows():
-        spot_return  = float(row["daily_return"])
-        scenario_date = str(row["trade_date"])
+        scenario_date  = row["trade_date"]
+        primary_return = float(row["daily_return"])
 
-        pnl = _compute_portfolio_pnl(
-            positions_df=positions_df,
-            curated_options=curated_options,
-            curated_futures=curated_futures,
-            lot_size_df=lot_size_df,
-            trade_date=trade_date,
-            spot_return=spot_return,
-        )
+        total_pnl = 0.0
+        for sym in book_symbols:
+            sym_positions = positions_df[positions_df["symbol"] == sym]
+            if sym_positions.empty:
+                continue
+            sym_return = float(sym_returns[sym].get(scenario_date, primary_return))
+            total_pnl += _compute_portfolio_pnl(
+                positions_df=sym_positions,
+                curated_options=curated_options,
+                curated_futures=curated_futures,
+                lot_size_df=lot_size_df,
+                trade_date=trade_date,
+                spot_return=sym_return,
+            )
 
         scenarios.append(ScenarioPnLPoint(
-            date=scenario_date,
-            spot_return_pct=round(spot_return * 100, 4),
-            portfolio_pnl=round(pnl, 2),
+            date=str(scenario_date),
+            spot_return_pct=round(primary_return * 100, 4),
+            portfolio_pnl=round(total_pnl, 2),
         ))
 
     pnl_array = np.array([s.portfolio_pnl for s in scenarios])
