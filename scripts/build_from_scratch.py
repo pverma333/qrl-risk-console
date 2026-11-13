@@ -1,6 +1,13 @@
 """
 Full bootstrap: ingest 2019-01-01 → today, rebuild all processed and curated
-layers, upload to R2, trigger Render redeploy, send email notification.
+layers, run sync check, upload to R2, trigger Render redeploy, send email.
+
+Equivalent to running these commands in sequence:
+    python -m scripts.run_data_pipeline --start 2019-01-01 --end <today> --rebuild
+    python scripts/run_processed_builder.py --mode full
+    python scripts/run_curated_option_chain.py --mode full
+    python scripts/run_curated_futures.py --mode full
+    python -m scripts.check_sync_status
 
 Usage:
     python scripts/build_from_scratch.py
@@ -10,6 +17,7 @@ Usage:
 import argparse
 import os
 import smtplib
+import subprocess
 import sys
 import urllib.request
 from datetime import date, datetime
@@ -18,24 +26,6 @@ from email.mime.text import MIMEText
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(BASE_DIR))
-
-from src.core.fetch_config import FetchConfig
-from src.data.master_combined_gbond import GbondProcessor
-from src.data.master_derivatives_fetch import DerivativesFetcher
-from src.data.master_index_fetch import MasterIndexFetcher
-from src.data.master_index_yield_fetch import MasterIndexYieldFetcher
-from src.data.master_lot_size_map import LotSizeMapStore
-from src.data.master_trade_calendar_writer import TradeCalendarWriter
-from src.data.processed_derivatives_builder import ProcessedDerivativesBuilder
-from src.data.processed_gbond_builder import ProcessedGBondBuilder
-from src.data.processed_index_spot_builder import ProcessedIndexSpotBuilder
-from src.data.processed_index_yield_builder import ProcessedIndexYieldBuilder
-from src.data.processed_lot_size_builder import ProcessedLotSizeBuilder
-from src.data.processed_trade_calendar_builder import ProcessedTradeCalendarBuilder
-from src.data.processed_vix_builder import ProcessedVIXBuilder
-from src.data.curated_futures_builder import CuratedFuturesBuilder
-from src.data.curated_option_chain_builder import CuratedOptionChainBuilder
 
 START_DATE = date(2019, 1, 1)
 
@@ -48,6 +38,20 @@ def log(msg: str):
     line = f"[{ts}] {msg}"
     print(line)
     _log_lines.append(line)
+
+
+def run_step(label: str, cmd: list[str]):
+    """Run a subprocess step, streaming output and raising on failure."""
+    log(f"--- {label} ---")
+    log(f"  cmd: {' '.join(cmd)}")
+    result = subprocess.run(
+        cmd,
+        cwd=BASE_DIR,
+        capture_output=False,   # let stdout/stderr stream to console
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"{label} exited with code {result.returncode}")
+    log(f"--- {label} complete ---")
 
 
 def send_email(subject_suffix: str = ""):
@@ -106,75 +110,6 @@ def trigger_render_deploy():
         log(f"Render deploy failed: {exc}")
 
 
-def run_ingest(config: FetchConfig, end_date: date):
-    log("--- Step 1: Ingest ---")
-
-    log("  Trade calendar …")
-    TradeCalendarWriter(config, rebuild=True).run()
-
-    log("  Lot-size map …")
-    LotSizeMapStore(config=config).build()
-
-    log(f"  Derivatives {START_DATE} → {end_date} …")
-    failed = DerivativesFetcher(config, rebuild=True).run(START_DATE, end_date)
-    if failed:
-        log(f"  WARNING: {len(failed)} derivative dates failed: {failed}")
-
-    log(f"  Index spot {START_DATE} → {end_date} …")
-    MasterIndexFetcher(config, rebuild=True).run(START_DATE, end_date)
-
-    log(f"  Index yield {START_DATE} → {end_date} …")
-    failed_yield = MasterIndexYieldFetcher(config, rebuild=True).run(START_DATE, end_date)
-    if failed_yield:
-        log(f"  WARNING: {len(failed_yield)} yield dates failed: {failed_yield}")
-
-    log("  G-bond combined …")
-    GbondProcessor(config).build_combined_gbond()
-
-    log("--- Ingest complete ---")
-
-
-def run_processed(config: FetchConfig):
-    log("--- Step 2: Processed layer (full mode) ---")
-    processors = [
-        ("trade_calendar", ProcessedTradeCalendarBuilder),
-        ("lot_size",       ProcessedLotSizeBuilder),
-        ("derivatives",    ProcessedDerivativesBuilder),
-        ("index_spot",     ProcessedIndexSpotBuilder),
-        ("vix",            ProcessedVIXBuilder),
-        ("index_yield",    ProcessedIndexYieldBuilder),
-        ("gbond",          ProcessedGBondBuilder),
-    ]
-    for name, Cls in processors:
-        log(f"  {name} …")
-        Cls(config).run("full")
-    log("--- Processed complete ---")
-
-
-def run_curated(config: FetchConfig):
-    log("--- Step 3: Curated layer (full mode) ---")
-    log("  option_chain …")
-    CuratedOptionChainBuilder(config).run("full")
-    log("  futures …")
-    CuratedFuturesBuilder(config).run("full")
-    log("--- Curated complete ---")
-
-
-def run_upload():
-    log("--- Step 4: Upload to R2 ---")
-    upload_script = BASE_DIR / "scripts" / "upload_to_r2.py"
-    import subprocess
-    result = subprocess.run(
-        [sys.executable, str(upload_script)],
-        capture_output=True, text=True,
-    )
-    if result.stdout:
-        log(result.stdout.strip())
-    if result.returncode != 0:
-        raise RuntimeError(f"upload_to_r2 failed:\n{result.stderr}")
-    log("--- Upload complete ---")
-
-
 def main():
     global _status
 
@@ -186,24 +121,56 @@ def main():
     args = parser.parse_args()
 
     end_date = date.today()
-    config   = FetchConfig(BASE_DIR, use_year_partition=True)
+    py = sys.executable
 
     log(f"=== QRL bootstrap START — {START_DATE} → {end_date} ===")
 
     try:
+        # Step 1 — Ingest
         if not args.skip_ingest:
-            run_ingest(config, end_date)
+            run_step(
+                "Step 1: Ingest (run_data_pipeline)",
+                [py, "-m", "scripts.run_data_pipeline",
+                 "--start", str(START_DATE),
+                 "--end",   str(end_date),
+                 "--rebuild"],
+            )
         else:
-            log("Ingest skipped (--skip-ingest).")
+            log("Step 1: Ingest skipped (--skip-ingest).")
 
-        run_processed(config)
-        run_curated(config)
+        # Step 2 — Processed layer
+        run_step(
+            "Step 2: Processed layer (run_processed_builder --mode full)",
+            [py, "scripts/run_processed_builder.py", "--mode", "full"],
+        )
 
+        # Step 3 — Curated option chain
+        run_step(
+            "Step 3: Curated option chain (run_curated_option_chain --mode full)",
+            [py, "scripts/run_curated_option_chain.py", "--mode", "full"],
+        )
+
+        # Step 4 — Curated futures
+        run_step(
+            "Step 4: Curated futures (run_curated_futures --mode full)",
+            [py, "scripts/run_curated_futures.py", "--mode", "full"],
+        )
+
+        # Step 5 — Sync check
+        run_step(
+            "Step 5: Sync check (check_sync_status)",
+            [py, "-m", "scripts.check_sync_status"],
+        )
+
+        # Step 6 — Upload + deploy
         if not args.skip_upload:
-            run_upload()
+            run_step(
+                "Step 6: Upload to R2",
+                [py, "scripts/upload_to_r2.py"],
+            )
             trigger_render_deploy()
         else:
-            log("Upload + Render skipped (--skip-upload).")
+            log("Step 6: Upload + Render skipped (--skip-upload).")
 
         log("=== Bootstrap COMPLETE ===")
 
